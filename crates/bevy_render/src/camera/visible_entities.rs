@@ -1,9 +1,9 @@
 use super::{Camera, DepthCalculation};
 use crate::Draw;
 use bevy_core::FloatOrd;
-use bevy_ecs::{Entity, Query};
-use bevy_property::Properties;
-use bevy_transform::prelude::Transform;
+use bevy_ecs::{Entity, Query, With};
+use bevy_reflect::Reflect;
+use bevy_transform::prelude::GlobalTransform;
 
 #[derive(Debug)]
 pub struct VisibleEntity {
@@ -11,9 +11,9 @@ pub struct VisibleEntity {
     pub order: FloatOrd,
 }
 
-#[derive(Default, Debug, Properties)]
+#[derive(Default, Debug, Reflect)]
 pub struct VisibleEntities {
-    #[property(ignore)]
+    #[reflect(ignore)]
     pub value: Vec<VisibleEntity>,
 }
 
@@ -24,26 +24,26 @@ impl VisibleEntities {
 }
 
 pub fn visible_entities_system(
-    mut camera_query: Query<(&Camera, &Transform, &mut VisibleEntities)>,
-    mut draw_query: Query<(Entity, &Draw)>,
-    draw_transform_query: Query<(&Draw, &Transform)>,
+    mut camera_query: Query<(&Camera, &GlobalTransform, &mut VisibleEntities)>,
+    draw_query: Query<(Entity, &Draw)>,
+    draw_transform_query: Query<&GlobalTransform, With<Draw>>,
 ) {
-    for (camera, camera_transform, mut visible_entities) in &mut camera_query.iter() {
+    for (camera, camera_global_transform, mut visible_entities) in camera_query.iter_mut() {
         visible_entities.value.clear();
-        let camera_position = camera_transform.value.w_axis().truncate();
+        let camera_position = camera_global_transform.translation;
 
         let mut no_transform_order = 0.0;
         let mut transparent_entities = Vec::new();
-        for (entity, draw) in &mut draw_query.iter() {
+        for (entity, draw) in draw_query.iter() {
             if !draw.is_visible {
                 continue;
             }
 
-            let order = if let Ok(transform) = draw_transform_query.get::<Transform>(entity) {
-                let position = transform.value.w_axis().truncate();
+            let order = if let Ok(global_transform) = draw_transform_query.get(entity) {
+                let position = global_transform.translation;
                 // smaller distances are sorted to lower indices by using the distance from the camera
                 FloatOrd(match camera.depth_calculation {
-                    DepthCalculation::ZDifference => camera_position.z() - position.z(),
+                    DepthCalculation::ZDifference => camera_position.z - position.z,
                     DepthCalculation::Distance => (camera_position - position).length(),
                 })
             } else {

@@ -6,20 +6,18 @@ use crate::{
 };
 use bevy_asset::Handle;
 use bevy_ecs::Bundle;
+use bevy_math::Vec3;
 use bevy_render::{
     camera::{Camera, OrthographicProjection, VisibleEntities, WindowOrigin},
     draw::Draw,
     mesh::Mesh,
-    pipeline::{DynamicBinding, PipelineSpecialization, RenderPipeline, RenderPipelines},
+    pipeline::{RenderPipeline, RenderPipelines},
 };
 use bevy_sprite::{ColorMaterial, QUAD_HANDLE};
-use bevy_transform::{
-    components::LocalTransform,
-    prelude::{Rotation, Scale, Transform, Translation},
-};
+use bevy_transform::prelude::{GlobalTransform, Transform};
 
-#[derive(Bundle)]
-pub struct NodeComponents {
+#[derive(Bundle, Clone, Debug)]
+pub struct NodeBundle {
     pub node: Node,
     pub style: Style,
     pub mesh: Handle<Mesh>, // TODO: maybe abstract this out
@@ -27,43 +25,28 @@ pub struct NodeComponents {
     pub draw: Draw,
     pub render_pipelines: RenderPipelines,
     pub transform: Transform,
-    pub local_transform: LocalTransform,
+    pub global_transform: GlobalTransform,
 }
 
-impl Default for NodeComponents {
+impl Default for NodeBundle {
     fn default() -> Self {
-        NodeComponents {
+        NodeBundle {
             mesh: QUAD_HANDLE,
-            render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::specialized(
+            render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
                 UI_PIPELINE_HANDLE,
-                PipelineSpecialization {
-                    dynamic_bindings: vec![
-                        // Transform
-                        DynamicBinding {
-                            bind_group: 1,
-                            binding: 0,
-                        },
-                        // Node_size
-                        DynamicBinding {
-                            bind_group: 1,
-                            binding: 1,
-                        },
-                    ],
-                    ..Default::default()
-                },
             )]),
             node: Default::default(),
             style: Default::default(),
             material: Default::default(),
             draw: Default::default(),
             transform: Default::default(),
-            local_transform: Default::default(),
+            global_transform: Default::default(),
         }
     }
 }
 
-#[derive(Bundle)]
-pub struct ImageComponents {
+#[derive(Bundle, Clone, Debug)]
+pub struct ImageBundle {
     pub node: Node,
     pub style: Style,
     pub image: Image,
@@ -73,30 +56,15 @@ pub struct ImageComponents {
     pub draw: Draw,
     pub render_pipelines: RenderPipelines,
     pub transform: Transform,
-    pub local_transform: LocalTransform,
+    pub global_transform: GlobalTransform,
 }
 
-impl Default for ImageComponents {
+impl Default for ImageBundle {
     fn default() -> Self {
-        ImageComponents {
+        ImageBundle {
             mesh: QUAD_HANDLE,
-            render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::specialized(
+            render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
                 UI_PIPELINE_HANDLE,
-                PipelineSpecialization {
-                    dynamic_bindings: vec![
-                        // Transform
-                        DynamicBinding {
-                            bind_group: 1,
-                            binding: 0,
-                        },
-                        // Node_size
-                        DynamicBinding {
-                            bind_group: 1,
-                            binding: 1,
-                        },
-                    ],
-                    ..Default::default()
-                },
             )]),
             node: Default::default(),
             image: Default::default(),
@@ -105,13 +73,13 @@ impl Default for ImageComponents {
             material: Default::default(),
             draw: Default::default(),
             transform: Default::default(),
-            local_transform: Default::default(),
+            global_transform: Default::default(),
         }
     }
 }
 
-#[derive(Bundle)]
-pub struct TextComponents {
+#[derive(Bundle, Clone, Debug)]
+pub struct TextBundle {
     pub node: Node,
     pub style: Style,
     pub draw: Draw,
@@ -119,12 +87,12 @@ pub struct TextComponents {
     pub calculated_size: CalculatedSize,
     pub focus_policy: FocusPolicy,
     pub transform: Transform,
-    pub local_transform: LocalTransform,
+    pub global_transform: GlobalTransform,
 }
 
-impl Default for TextComponents {
+impl Default for TextBundle {
     fn default() -> Self {
-        TextComponents {
+        TextBundle {
             focus_policy: FocusPolicy::Pass,
             draw: Draw {
                 is_transparent: true,
@@ -135,13 +103,13 @@ impl Default for TextComponents {
             calculated_size: Default::default(),
             style: Default::default(),
             transform: Default::default(),
-            local_transform: Default::default(),
+            global_transform: Default::default(),
         }
     }
 }
 
-#[derive(Bundle)]
-pub struct ButtonComponents {
+#[derive(Bundle, Clone, Debug)]
+pub struct ButtonBundle {
     pub node: Node,
     pub button: Button,
     pub style: Style,
@@ -152,31 +120,16 @@ pub struct ButtonComponents {
     pub draw: Draw,
     pub render_pipelines: RenderPipelines,
     pub transform: Transform,
-    pub local_transform: LocalTransform,
+    pub global_transform: GlobalTransform,
 }
 
-impl Default for ButtonComponents {
+impl Default for ButtonBundle {
     fn default() -> Self {
-        ButtonComponents {
+        ButtonBundle {
             button: Button,
             mesh: QUAD_HANDLE,
-            render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::specialized(
+            render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(
                 UI_PIPELINE_HANDLE,
-                PipelineSpecialization {
-                    dynamic_bindings: vec![
-                        // Transform
-                        DynamicBinding {
-                            bind_group: 1,
-                            binding: 0,
-                        },
-                        // Node_size
-                        DynamicBinding {
-                            bind_group: 1,
-                            binding: 1,
-                        },
-                    ],
-                    ..Default::default()
-                },
             )]),
             interaction: Default::default(),
             focus_policy: Default::default(),
@@ -185,28 +138,26 @@ impl Default for ButtonComponents {
             material: Default::default(),
             draw: Default::default(),
             transform: Default::default(),
-            local_transform: Default::default(),
+            global_transform: Default::default(),
         }
     }
 }
 
-#[derive(Bundle)]
-pub struct UiCameraComponents {
+#[derive(Bundle, Debug)]
+pub struct UiCameraBundle {
     pub camera: Camera,
     pub orthographic_projection: OrthographicProjection,
     pub visible_entities: VisibleEntities,
     pub transform: Transform,
-    pub translation: Translation,
-    pub rotation: Rotation,
-    pub scale: Scale,
+    pub global_transform: GlobalTransform,
 }
 
-impl Default for UiCameraComponents {
+impl Default for UiCameraBundle {
     fn default() -> Self {
         // we want 0 to be "closest" and +far to be "farthest" in 2d, so we offset
         // the camera's translation by far and use a right handed coordinate system
         let far = 1000.0;
-        UiCameraComponents {
+        UiCameraBundle {
             camera: Camera {
                 name: Some(crate::camera::UI_CAMERA.to_string()),
                 ..Default::default()
@@ -216,11 +167,9 @@ impl Default for UiCameraComponents {
                 window_origin: WindowOrigin::BottomLeft,
                 ..Default::default()
             },
-            translation: Translation::new(0.0, 0.0, far - 0.1),
             visible_entities: Default::default(),
-            transform: Default::default(),
-            rotation: Default::default(),
-            scale: Default::default(),
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, far - 0.1)),
+            global_transform: Default::default(),
         }
     }
 }

@@ -10,13 +10,14 @@ use crate::{
     texture::{Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsage},
     Color,
 };
-use bevy_property::Properties;
+use bevy_reflect::Reflect;
 use bevy_window::WindowId;
 
 /// A component that indicates that an entity should be drawn in the "main pass"
-#[derive(Default, Properties)]
+#[derive(Default, Reflect)]
 pub struct MainPass;
 
+#[derive(Debug)]
 pub struct Msaa {
     pub samples: u32,
 }
@@ -50,6 +51,7 @@ impl Msaa {
     }
 }
 
+#[derive(Debug)]
 pub struct BaseRenderGraphConfig {
     pub add_2d_camera: bool,
     pub add_3d_camera: bool,
@@ -214,7 +216,7 @@ impl BaseRenderGraphBuilder for RenderGraph {
                         mip_level_count: 1,
                         sample_count: msaa.samples,
                         dimension: TextureDimension::D2,
-                        format: TextureFormat::Bgra8UnormSrgb,
+                        format: TextureFormat::default(),
                         usage: TextureUsage::OUTPUT_ATTACHMENT,
                     },
                 ),

@@ -5,6 +5,7 @@ use bevy_asset::Handle;
 use bevy_core::{Byteable, Bytes};
 pub use bevy_derive::{RenderResource, RenderResources};
 use bevy_math::{Mat4, Vec2, Vec3, Vec4};
+use bevy_transform::components::GlobalTransform;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum RenderResourceType {
@@ -76,7 +77,7 @@ pub trait RenderResource {
     fn write_buffer_bytes(&self, buffer: &mut [u8]);
     fn buffer_byte_len(&self) -> Option<usize>;
     // TODO: consider making these panic by default, but return non-options
-    fn texture(&self) -> Option<Handle<Texture>>;
+    fn texture(&self) -> Option<&Handle<Texture>>;
 }
 
 pub trait RenderResources: Send + Sync + 'static {
@@ -86,7 +87,7 @@ pub trait RenderResources: Send + Sync + 'static {
     fn get_render_resource_hints(&self, _index: usize) -> Option<RenderResourceHints> {
         None
     }
-    fn iter_render_resources(&self) -> RenderResourceIterator;
+    fn iter(&self) -> RenderResourceIterator;
 }
 
 pub struct RenderResourceIterator<'a> {
@@ -135,7 +136,7 @@ macro_rules! impl_render_resource_bytes {
                 Some(self.byte_len())
             }
 
-            fn texture(&self) -> Option<Handle<Texture>> {
+            fn texture(&self) -> Option<&Handle<Texture>> {
                 None
             }
         }
@@ -174,19 +175,38 @@ where
         Some(self.byte_len())
     }
 
-    fn texture(&self) -> Option<Handle<Texture>> {
+    fn texture(&self) -> Option<&Handle<Texture>> {
         None
     }
 }
 
-impl RenderResources for bevy_transform::prelude::Transform {
+impl RenderResource for GlobalTransform {
+    fn resource_type(&self) -> Option<RenderResourceType> {
+        Some(RenderResourceType::Buffer)
+    }
+
+    fn write_buffer_bytes(&self, buffer: &mut [u8]) {
+        let mat4 = self.compute_matrix();
+        mat4.write_bytes(buffer);
+    }
+
+    fn buffer_byte_len(&self) -> Option<usize> {
+        Some(std::mem::size_of::<[f32; 16]>())
+    }
+
+    fn texture(&self) -> Option<&Handle<Texture>> {
+        None
+    }
+}
+
+impl RenderResources for bevy_transform::prelude::GlobalTransform {
     fn render_resources_len(&self) -> usize {
         1
     }
 
     fn get_render_resource(&self, index: usize) -> Option<&dyn RenderResource> {
         if index == 0 {
-            Some(&self.value)
+            Some(self)
         } else {
             None
         }
@@ -200,7 +220,7 @@ impl RenderResources for bevy_transform::prelude::Transform {
         }
     }
 
-    fn iter_render_resources(&self) -> RenderResourceIterator {
+    fn iter(&self) -> RenderResourceIterator {
         RenderResourceIterator::new(self)
     }
 }

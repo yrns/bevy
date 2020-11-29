@@ -18,7 +18,7 @@ use bevy_render::{
 
 use std::sync::Arc;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct LazyCommandEncoder {
     command_encoder: Option<wgpu::CommandEncoder>,
 }
@@ -53,6 +53,7 @@ impl LazyCommandEncoder {
     }
 }
 
+#[derive(Debug)]
 pub struct WgpuRenderContext {
     pub device: Arc<wgpu::Device>,
     pub command_encoder: LazyCommandEncoder,

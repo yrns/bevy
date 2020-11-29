@@ -1,26 +1,42 @@
 use crate::{
     resource::Resources,
-    schedule::ParallelExecutorOptions,
     system::{System, SystemId, ThreadLocalExecution},
+    IntoSystem, World,
 };
-use bevy_hecs::World;
-use parking_lot::Mutex;
-use std::{
-    borrow::Cow,
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use bevy_utils::{HashMap, HashSet};
+use std::{borrow::Cow, fmt};
 
 /// An ordered collection of stages, which each contain an ordered list of [System]s.
 /// Schedules are essentially the "execution plan" for an App's systems.
 /// They are run on a given [World] and [Resources] reference.
 #[derive(Default)]
 pub struct Schedule {
-    pub(crate) stages: HashMap<Cow<'static, str>, Vec<Arc<Mutex<Box<dyn System>>>>>,
+    pub(crate) stages: HashMap<Cow<'static, str>, Vec<Box<dyn System<Input = (), Output = ()>>>>,
     pub(crate) stage_order: Vec<Cow<'static, str>>,
     pub(crate) system_ids: HashSet<SystemId>,
     generation: usize,
     last_initialize_generation: usize,
+}
+
+impl fmt::Debug for Schedule {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Schedule {{")?;
+
+        let stages = self
+            .stage_order
+            .iter()
+            .map(|s| (s, self.stages[s].iter().map(|s| (s.name(), s.id()))));
+
+        for (stage, syss) in stages {
+            writeln!(f, "    Stage \"{}\"", stage)?;
+
+            for (name, id) in syss {
+                writeln!(f, "        System {{ name: \"{}\", id: {:?} }}", name, id)?;
+            }
+        }
+
+        writeln!(f, "}}")
+    }
 }
 
 impl Schedule {
@@ -80,36 +96,32 @@ impl Schedule {
         self.stage_order.insert(target_index, stage);
     }
 
-    pub fn add_system_to_stage(
+    pub fn add_system_to_stage<S, Params, IntoS>(
         &mut self,
         stage_name: impl Into<Cow<'static, str>>,
-        system: Box<dyn System>,
-    ) -> &mut Self {
-        let stage_name = stage_name.into();
-        let systems = self
-            .stages
-            .get_mut(&stage_name)
-            .unwrap_or_else(|| panic!("Stage does not exist: {}", stage_name));
-        if self.system_ids.contains(&system.id()) {
-            panic!(
-                "System with id {:?} ({}) already exists",
-                system.id(),
-                system.name()
-            );
-        }
-        self.system_ids.insert(system.id());
-        systems.push(Arc::new(Mutex::new(system)));
-
-        self.generation += 1;
+        system: IntoS,
+    ) -> &mut Self
+    where
+        S: System<Input = (), Output = ()>,
+        IntoS: IntoSystem<Params, S>,
+    {
+        self.add_system_to_stage_internal(stage_name.into(), Box::new(system.system()));
         self
     }
 
-    pub fn add_system_to_stage_front(
+    pub fn add_boxed_system_to_stage(
         &mut self,
         stage_name: impl Into<Cow<'static, str>>,
-        system: Box<dyn System>,
-    ) -> &mut Self {
-        let stage_name = stage_name.into();
+        system: Box<dyn System<Input = (), Output = ()>>,
+    ) {
+        self.add_system_to_stage_internal(stage_name.into(), system);
+    }
+
+    fn add_system_to_stage_internal(
+        &mut self,
+        stage_name: Cow<'static, str>,
+        system: Box<dyn System<Input = (), Output = ()>>,
+    ) {
         let systems = self
             .stages
             .get_mut(&stage_name)
@@ -122,36 +134,66 @@ impl Schedule {
             );
         }
         self.system_ids.insert(system.id());
-        systems.insert(0, Arc::new(Mutex::new(system)));
+        systems.push(system);
 
         self.generation += 1;
+    }
+
+    pub fn add_system_to_stage_front<S, Params, IntoS>(
+        &mut self,
+        stage_name: impl Into<Cow<'static, str>>,
+        system: IntoS,
+    ) -> &mut Self
+    where
+        S: System<Input = (), Output = ()>,
+        IntoS: IntoSystem<Params, S>,
+    {
+        self.add_system_to_stage_front_internal(stage_name.into(), Box::new(system.system()));
         self
+    }
+
+    fn add_system_to_stage_front_internal(
+        &mut self,
+        stage_name: Cow<'static, str>,
+        system: Box<dyn System<Input = (), Output = ()>>,
+    ) {
+        let systems = self
+            .stages
+            .get_mut(&stage_name)
+            .unwrap_or_else(|| panic!("Stage does not exist: {}", stage_name));
+        if self.system_ids.contains(&system.id()) {
+            panic!(
+                "System with id {:?} ({}) already exists",
+                system.id(),
+                system.name()
+            );
+        }
+        self.system_ids.insert(system.id());
+        systems.insert(0, system);
+
+        self.generation += 1;
     }
 
     pub fn run(&mut self, world: &mut World, resources: &mut Resources) {
         for stage_name in self.stage_order.iter() {
             if let Some(stage_systems) = self.stages.get_mut(stage_name) {
                 for system in stage_systems.iter_mut() {
-                    let mut system = system.lock();
-                    #[cfg(feature = "profiler")]
-                    crate::profiler_start(resources, system.name().clone());
-                    system.update_archetype_access(world);
+                    system.update(world);
                     match system.thread_local_execution() {
-                        ThreadLocalExecution::NextFlush => system.run(world, resources),
+                        ThreadLocalExecution::NextFlush => {
+                            system.run((), world, resources);
+                        }
                         ThreadLocalExecution::Immediate => {
-                            system.run(world, resources);
+                            system.run((), world, resources);
                             // NOTE: when this is made parallel a full sync is required here
                             system.run_thread_local(world, resources);
                         }
                     }
-                    #[cfg(feature = "profiler")]
-                    crate::profiler_stop(resources, system.name().clone());
                 }
 
                 // "flush"
                 // NOTE: when this is made parallel a full sync is required here
                 for system in stage_systems.iter_mut() {
-                    let mut system = system.lock();
                     match system.thread_local_execution() {
                         ThreadLocalExecution::NextFlush => {
                             system.run_thread_local(world, resources)
@@ -163,27 +205,18 @@ impl Schedule {
         }
 
         world.clear_trackers();
+        resources.clear_trackers();
     }
 
     // TODO: move this code to ParallelExecutor
-    pub fn initialize(&mut self, resources: &mut Resources) {
+    pub fn initialize(&mut self, world: &mut World, resources: &mut Resources) {
         if self.last_initialize_generation == self.generation {
             return;
         }
 
-        let thread_pool_builder = resources
-            .get::<ParallelExecutorOptions>()
-            .map(|options| (*options).clone())
-            .unwrap_or_else(ParallelExecutorOptions::default)
-            .create_builder();
-        // For now, bevy_ecs only uses the global thread pool so it is sufficient to configure it once here.
-        // Dont call .unwrap() as the function is called twice..
-        let _ = thread_pool_builder.build_global();
-
         for stage in self.stages.values_mut() {
             for system in stage.iter_mut() {
-                let mut system = system.lock();
-                system.initialize(resources);
+                system.initialize(world, resources);
             }
         }
 
@@ -192,5 +225,18 @@ impl Schedule {
 
     pub fn generation(&self) -> usize {
         self.generation
+    }
+
+    pub fn run_on_systems(
+        &mut self,
+        mut func: impl FnMut(&mut dyn System<Input = (), Output = ()>),
+    ) {
+        for stage_name in self.stage_order.iter() {
+            if let Some(stage_systems) = self.stages.get_mut(stage_name) {
+                for system in stage_systems.iter_mut() {
+                    func(&mut **system);
+                }
+            }
+        }
     }
 }

@@ -1,6 +1,7 @@
-use super::{BindGroupDescriptor, VertexBufferDescriptor, VertexBufferDescriptors};
-use crate::shader::{ShaderLayout, GL_VERTEX_INDEX};
-use std::{collections::HashMap, hash::Hash};
+use super::{BindGroupDescriptor, VertexBufferDescriptor};
+use crate::shader::ShaderLayout;
+use bevy_utils::HashMap;
+use std::hash::Hash;
 
 #[derive(Clone, Debug, Default)]
 pub struct PipelineLayout {
@@ -16,7 +17,7 @@ impl PipelineLayout {
     }
 
     pub fn from_shader_layouts(shader_layouts: &mut [ShaderLayout]) -> Self {
-        let mut bind_groups = HashMap::<u32, BindGroupDescriptor>::new();
+        let mut bind_groups = HashMap::<u32, BindGroupDescriptor>::default();
         let mut vertex_buffer_descriptors = Vec::new();
         for shader_layout in shader_layouts.iter_mut() {
             for shader_bind_group in shader_layout.bind_groups.iter_mut() {
@@ -64,27 +65,6 @@ impl PipelineLayout {
         PipelineLayout {
             bind_groups: bind_groups_result,
             vertex_buffer_descriptors,
-        }
-    }
-
-    pub fn sync_vertex_buffer_descriptors(
-        &mut self,
-        vertex_buffer_descriptors: &VertexBufferDescriptors,
-    ) {
-        for vertex_buffer_descriptor in self.vertex_buffer_descriptors.iter_mut() {
-            if let Some(graph_descriptor) =
-                vertex_buffer_descriptors.get(&vertex_buffer_descriptor.name)
-            {
-                vertex_buffer_descriptor.sync_with_descriptor(graph_descriptor);
-            } else if vertex_buffer_descriptor.name == GL_VERTEX_INDEX {
-                // GL_VERTEX_INDEX is a special attribute set on our behalf
-                continue;
-            } else {
-                panic!(
-                    "Encountered unsupported Vertex Buffer: {}",
-                    vertex_buffer_descriptor.name
-                );
-            }
         }
     }
 }

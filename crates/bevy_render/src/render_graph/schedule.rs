@@ -1,5 +1,5 @@
 use super::{NodeId, NodeState, RenderGraph, RenderGraphError};
-use std::collections::HashMap;
+use bevy_utils::HashMap;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -107,7 +107,7 @@ pub trait RenderGraphStager {
 
 // TODO: remove this
 /// This scheduler ignores dependencies and puts everything in one stage. It shouldn't be used for anything :)
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct LinearStager;
 
 impl RenderGraphStager for LinearStager {
@@ -124,7 +124,7 @@ impl RenderGraphStager for LinearStager {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 /// Determines the grouping strategy used when constructing graph stages
 pub enum JobGrouping {
     /// Default to adding the current node to a new job in its assigned stage. This results
@@ -135,6 +135,7 @@ pub enum JobGrouping {
     Tight,
 }
 
+#[derive(Debug)]
 /// Produces Render Graph stages and jobs in a way that ensures node dependencies are respected.
 pub struct DependentNodeStager {
     job_grouping: JobGrouping,
@@ -161,7 +162,7 @@ impl RenderGraphStager for DependentNodeStager {
             .iter_nodes()
             .filter(|node| node.input_slots.is_empty());
         let mut stages = vec![Stage::default()];
-        let mut node_stages = HashMap::new();
+        let mut node_stages = HashMap::default();
         for output_only_node in output_only_nodes {
             // each "output only" node should start a new job on the first stage
             stage_node(

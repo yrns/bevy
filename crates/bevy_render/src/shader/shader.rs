@@ -1,7 +1,7 @@
 use super::ShaderLayout;
 use bevy_asset::Handle;
-use bevy_glsl_to_spirv::compile;
-use std::{io::Read, marker::Copy};
+use bevy_reflect::TypeUuid;
+use std::marker::Copy;
 
 /// The stage of a shader
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug)]
@@ -11,6 +11,7 @@ pub enum ShaderStage {
     Compute,
 }
 
+#[cfg(all(not(target_os = "ios"), not(target_arch = "wasm32")))]
 impl Into<bevy_glsl_to_spirv::ShaderType> for ShaderStage {
     fn into(self) -> bevy_glsl_to_spirv::ShaderType {
         match self {
@@ -21,15 +22,51 @@ impl Into<bevy_glsl_to_spirv::ShaderType> for ShaderStage {
     }
 }
 
-fn glsl_to_spirv(
+#[cfg(all(not(target_os = "ios"), not(target_arch = "wasm32")))]
+pub fn glsl_to_spirv(
     glsl_source: &str,
     stage: ShaderStage,
     shader_defs: Option<&[String]>,
 ) -> Vec<u32> {
-    let mut output = compile(glsl_source, stage.into(), shader_defs).unwrap();
-    let mut spv_bytes = Vec::new();
-    output.read_to_end(&mut spv_bytes).unwrap();
-    bytes_to_words(&spv_bytes)
+    bevy_glsl_to_spirv::compile(glsl_source, stage.into(), shader_defs).unwrap()
+}
+
+#[cfg(target_os = "ios")]
+impl Into<shaderc::ShaderKind> for ShaderStage {
+    fn into(self) -> shaderc::ShaderKind {
+        match self {
+            ShaderStage::Vertex => shaderc::ShaderKind::Vertex,
+            ShaderStage::Fragment => shaderc::ShaderKind::Fragment,
+            ShaderStage::Compute => shaderc::ShaderKind::Compute,
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+pub fn glsl_to_spirv(
+    glsl_source: &str,
+    stage: ShaderStage,
+    shader_defs: Option<&[String]>,
+) -> Vec<u32> {
+    let mut compiler = shaderc::Compiler::new().unwrap();
+    let mut options = shaderc::CompileOptions::new().unwrap();
+    if let Some(shader_defs) = shader_defs {
+        for def in shader_defs.iter() {
+            options.add_macro_definition(def, None);
+        }
+    }
+
+    let binary_result = compiler
+        .compile_into_spirv(
+            glsl_source,
+            stage.into(),
+            "shader.glsl",
+            "main",
+            Some(&options),
+        )
+        .unwrap();
+
+    binary_result.as_binary().to_vec()
 }
 
 fn bytes_to_words(bytes: &[u8]) -> Vec<u32> {
@@ -57,7 +94,8 @@ impl ShaderSource {
 }
 
 /// A shader, as defined by its [ShaderSource] and [ShaderStage]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, TypeUuid)]
+#[uuid = "d95bc916-6c55-4de3-9622-37e7b6969fda"]
 pub struct Shader {
     pub source: ShaderSource,
     pub stage: ShaderStage,
@@ -75,6 +113,7 @@ impl Shader {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn get_spirv(&self, macros: Option<&[String]>) -> Vec<u32> {
         match self.source {
             ShaderSource::Spirv(ref bytes) => bytes.clone(),
@@ -82,6 +121,7 @@ impl Shader {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn get_spirv_shader(&self, macros: Option<&[String]>) -> Shader {
         Shader {
             source: ShaderSource::Spirv(self.get_spirv(macros)),
@@ -89,6 +129,7 @@ impl Shader {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn reflect_layout(&self, enforce_bevy_conventions: bool) -> Option<ShaderLayout> {
         if let ShaderSource::Spirv(ref spirv) = self.source {
             Some(ShaderLayout::from_spirv(
@@ -99,13 +140,37 @@ impl Shader {
             panic!("Cannot reflect layout of non-SpirV shader. Try compiling this shader to SpirV first using self.get_spirv_shader()");
         }
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn reflect_layout(&self, _enforce_bevy_conventions: bool) -> Option<ShaderLayout> {
+        panic!("Cannot reflect layout on wasm32");
+    }
 }
 
 /// Vertex and fragment stages in a shader program
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ShaderStages {
     pub vertex: Handle<Shader>,
     pub fragment: Option<Handle<Shader>>,
+}
+
+pub struct ShaderStagesIterator<'a> {
+    shader_stages: &'a ShaderStages,
+    state: u32,
+}
+
+impl<'a> Iterator for ShaderStagesIterator<'a> {
+    type Item = Handle<Shader>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ret = match self.state {
+            0 => Some(self.shader_stages.vertex.clone_weak()),
+            1 => self.shader_stages.fragment.as_ref().map(|h| h.clone_weak()),
+            _ => None,
+        };
+        self.state += 1;
+        ret
+    }
 }
 
 impl ShaderStages {
@@ -113,6 +178,13 @@ impl ShaderStages {
         ShaderStages {
             vertex: vertex_shader,
             fragment: None,
+        }
+    }
+
+    pub fn iter(&self) -> ShaderStagesIterator {
+        ShaderStagesIterator {
+            shader_stages: &self,
+            state: 0,
         }
     }
 }

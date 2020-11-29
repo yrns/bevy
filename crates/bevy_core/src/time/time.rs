@@ -1,7 +1,8 @@
 use bevy_ecs::ResMut;
-use std::time::{Duration, Instant};
+use bevy_utils::{Duration, Instant};
 
 /// Tracks elapsed time since the last update and since the App has started
+#[derive(Debug)]
 pub struct Time {
     pub delta: Duration,
     pub instant: Option<Instant>,

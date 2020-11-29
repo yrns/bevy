@@ -8,10 +8,11 @@ use crate::{
 };
 use bevy_core::AsBytes;
 
-use bevy_ecs::{Commands, IntoQuerySystem, Local, Query, Res, ResMut, Resources, System, World};
+use bevy_ecs::{Commands, IntoSystem, Local, Query, Res, ResMut, Resources, System, World};
 use bevy_transform::prelude::*;
 use std::borrow::Cow;
 
+#[derive(Debug)]
 pub struct CameraNode {
     command_queue: CommandQueue,
     camera_name: Cow<'static, str>,
@@ -43,7 +44,7 @@ impl Node for CameraNode {
 }
 
 impl SystemNode for CameraNode {
-    fn get_system(&self, commands: &mut Commands) -> Box<dyn System> {
+    fn get_system(&self, commands: &mut Commands) -> Box<dyn System<Input = (), Output = ()>> {
         let system = camera_node_system.system();
         commands.insert_local_resource(
             system.id(),
@@ -54,11 +55,11 @@ impl SystemNode for CameraNode {
                 staging_buffer: None,
             },
         );
-        system
+        Box::new(system)
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct CameraNodeState {
     command_queue: CommandQueue,
     camera_name: Cow<'static, str>,
@@ -73,15 +74,12 @@ pub fn camera_node_system(
     // PERF: this write on RenderResourceAssignments will prevent this system from running in parallel
     // with other systems that do the same
     mut render_resource_bindings: ResMut<RenderResourceBindings>,
-    query: Query<(&Camera, &Transform)>,
+    query: Query<(&Camera, &GlobalTransform)>,
 ) {
     let render_resource_context = &**render_resource_context;
 
-    let (camera, transform) = if let Some(camera_entity) = active_cameras.get(&state.camera_name) {
-        (
-            query.get::<Camera>(camera_entity).unwrap(),
-            query.get::<Transform>(camera_entity).unwrap(),
-        )
+    let (camera, global_transform) = if let Some(entity) = active_cameras.get(&state.camera_name) {
+        query.get(entity).unwrap()
     } else {
         return;
     };
@@ -118,7 +116,7 @@ pub fn camera_node_system(
 
     let matrix_size = std::mem::size_of::<[[f32; 4]; 4]>();
     let camera_matrix: [f32; 16] =
-        (camera.projection_matrix * transform.value.inverse()).to_cols_array();
+        (camera.projection_matrix * global_transform.compute_matrix().inverse()).to_cols_array();
 
     render_resource_context.write_mapped_buffer(
         staging_buffer,

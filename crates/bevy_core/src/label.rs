@@ -1,14 +1,14 @@
 use bevy_ecs::prelude::*;
-use bevy_property::Properties;
+use bevy_reflect::Reflect;
+use bevy_utils::{HashMap, HashSet};
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
     fmt::Debug,
     ops::{Deref, DerefMut},
 };
 
 /// A collection of labels
-#[derive(Default, Properties)]
+#[derive(Default, Reflect)]
 pub struct Labels {
     labels: HashSet<Cow<'static, str>>,
 }
@@ -29,7 +29,7 @@ where
     T: IntoIterator<Item = L>,
 {
     fn from(value: T) -> Self {
-        let mut labels = HashSet::new();
+        let mut labels = HashSet::default();
         for label in value {
             labels.insert(label.into());
         }
@@ -52,7 +52,7 @@ impl Labels {
 }
 
 /// Maintains a mapping from [Entity](bevy_ecs::prelude::Entity) ids to entity labels and entity labels to [Entities](bevy_ecs::prelude::Entity).
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct EntityLabels {
     label_entities: HashMap<Cow<'static, str>, Vec<Entity>>,
     entity_labels: HashMap<Entity, HashSet<Cow<'static, str>>>,
@@ -70,10 +70,10 @@ pub(crate) fn entity_labels_system(
     mut entity_labels: ResMut<EntityLabels>,
     // TODO: use change tracking when add/remove events are added
     // mut query: Query<(Entity, Changed<Labels>)>,
-    mut query: Query<(Entity, &Labels)>,
+    query: Query<(Entity, &Labels)>,
 ) {
     let entity_labels = entity_labels.deref_mut();
-    for (entity, labels) in &mut query.iter() {
+    for (entity, labels) in query.iter() {
         let current_labels = entity_labels
             .entity_labels
             .entry(entity)

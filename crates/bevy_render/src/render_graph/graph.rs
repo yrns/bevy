@@ -1,7 +1,7 @@
 use super::{Edge, Node, NodeId, NodeLabel, NodeState, RenderGraphError, SlotLabel, SystemNode};
 use bevy_ecs::{Commands, Schedule};
-use std::{borrow::Cow, collections::HashMap, fmt::Debug};
-
+use bevy_utils::HashMap;
+use std::{borrow::Cow, fmt::Debug};
 pub struct RenderGraph {
     nodes: HashMap<NodeId, NodeState>,
     node_names: HashMap<Cow<'static, str>, NodeId>,
@@ -43,7 +43,7 @@ impl RenderGraph {
         self.system_node_schedule
             .as_mut()
             .unwrap()
-            .add_system_to_stage("update", node.get_system(&mut self.commands));
+            .add_boxed_system_to_stage("update", node.get_system(&mut self.commands));
         self.add_node(name, node)
     }
 
@@ -55,7 +55,7 @@ impl RenderGraph {
         let node_id = self.get_node_id(&label)?;
         self.nodes
             .get(&node_id)
-            .ok_or_else(|| RenderGraphError::InvalidNode(label))
+            .ok_or(RenderGraphError::InvalidNode(label))
     }
 
     pub fn get_node_state_mut(
@@ -66,7 +66,7 @@ impl RenderGraph {
         let node_id = self.get_node_id(&label)?;
         self.nodes
             .get_mut(&node_id)
-            .ok_or_else(|| RenderGraphError::InvalidNode(label))
+            .ok_or(RenderGraphError::InvalidNode(label))
     }
 
     pub fn get_node_id(&self, label: impl Into<NodeLabel>) -> Result<NodeId, RenderGraphError> {
@@ -77,7 +77,7 @@ impl RenderGraph {
                 .node_names
                 .get(name)
                 .cloned()
-                .ok_or_else(|| RenderGraphError::InvalidNode(label)),
+                .ok_or(RenderGraphError::InvalidNode(label)),
         }
     }
 
@@ -300,7 +300,8 @@ mod tests {
         renderer::{RenderContext, RenderResourceType},
     };
     use bevy_ecs::{Resources, World};
-    use std::{collections::HashSet, iter::FromIterator};
+    use bevy_utils::HashSet;
+    use std::iter::FromIterator;
 
     #[derive(Debug)]
     struct TestNode {

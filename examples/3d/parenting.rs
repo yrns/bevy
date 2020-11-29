@@ -5,9 +5,9 @@ use bevy::prelude::*;
 fn main() {
     App::build()
         .add_resource(Msaa { samples: 4 })
-        .add_default_plugins()
-        .add_startup_system(setup.system())
-        .add_system(rotator_system.system())
+        .add_plugins(DefaultPlugins)
+        .add_startup_system(setup)
+        .add_system(rotator_system)
         .run();
 }
 
@@ -15,54 +15,51 @@ fn main() {
 struct Rotator;
 
 /// rotates the parent, which will result in the child also rotating
-fn rotator_system(time: Res<Time>, mut query: Query<(&Rotator, &mut Rotation)>) {
-    for (_rotator, mut rotation) in &mut query.iter() {
-        rotation.0 *= Quat::from_rotation_x(3.0 * time.delta_seconds);
+fn rotator_system(time: Res<Time>, mut query: Query<&mut Transform, With<Rotator>>) {
+    for mut transform in query.iter_mut() {
+        transform.rotation *= Quat::from_rotation_x(3.0 * time.delta_seconds);
     }
 }
 
 /// set up a simple scene with a "parent" cube and a "child" cube
 fn setup(
-    mut commands: Commands,
+    commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let cube_handle = meshes.add(Mesh::from(shape::Cube { size: 1.0 }));
+    let cube_handle = meshes.add(Mesh::from(shape::Cube { size: 2.0 }));
     let cube_material_handle = materials.add(StandardMaterial {
-        albedo: Color::rgb(0.5, 0.4, 0.3),
+        albedo: Color::rgb(0.8, 0.7, 0.6),
         ..Default::default()
     });
 
     commands
         // parent cube
-        .spawn(PbrComponents {
-            mesh: cube_handle,
-            material: cube_material_handle,
-            translation: Translation::new(0.0, 0.0, 1.0),
+        .spawn(PbrBundle {
+            mesh: cube_handle.clone(),
+            material: cube_material_handle.clone(),
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
             ..Default::default()
         })
         .with(Rotator)
         .with_children(|parent| {
             // child cube
-            parent.spawn(PbrComponents {
+            parent.spawn(PbrBundle {
                 mesh: cube_handle,
                 material: cube_material_handle,
-                translation: Translation::new(0.0, 0.0, 3.0),
+                transform: Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
                 ..Default::default()
             });
         })
         // light
-        .spawn(LightComponents {
-            translation: Translation::new(4.0, 5.0, -4.0),
+        .spawn(LightBundle {
+            transform: Transform::from_translation(Vec3::new(4.0, 5.0, -4.0)),
             ..Default::default()
         })
         // camera
-        .spawn(Camera3dComponents {
-            transform: Transform::new_sync_disabled(Mat4::face_toward(
-                Vec3::new(5.0, 10.0, 10.0),
-                Vec3::new(0.0, 0.0, 0.0),
-                Vec3::new(0.0, 1.0, 0.0),
-            )),
+        .spawn(Camera3dBundle {
+            transform: Transform::from_translation(Vec3::new(5.0, 10.0, 10.0))
+                .looking_at(Vec3::default(), Vec3::unit_y()),
             ..Default::default()
         });
 }

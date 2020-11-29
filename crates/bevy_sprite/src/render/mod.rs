@@ -1,6 +1,7 @@
 use crate::{ColorMaterial, Sprite, TextureAtlas, TextureAtlasSprite};
 use bevy_asset::{Assets, Handle};
 use bevy_ecs::Resources;
+use bevy_reflect::TypeUuid;
 use bevy_render::{
     pipeline::{
         BlendDescriptor, BlendFactor, BlendOperation, ColorStateDescriptor, ColorWrite,
@@ -13,10 +14,10 @@ use bevy_render::{
 };
 
 pub const SPRITE_PIPELINE_HANDLE: Handle<PipelineDescriptor> =
-    Handle::from_u128(278534784033876544639935131272264723170);
+    Handle::weak_from_u64(PipelineDescriptor::TYPE_UUID, 2785347840338765446);
 
 pub const SPRITE_SHEET_PIPELINE_HANDLE: Handle<PipelineDescriptor> =
-    Handle::from_u128(90168858051802816124217444474933884151);
+    Handle::weak_from_u64(PipelineDescriptor::TYPE_UUID, 9016885805180281612);
 
 pub fn build_sprite_sheet_pipeline(shaders: &mut Assets<Shader>) -> PipelineDescriptor {
     PipelineDescriptor {
@@ -31,7 +32,7 @@ pub fn build_sprite_sheet_pipeline(shaders: &mut Assets<Shader>) -> PipelineDesc
         depth_stencil_state: Some(DepthStencilStateDescriptor {
             format: TextureFormat::Depth32Float,
             depth_write_enabled: true,
-            depth_compare: CompareFunction::Less,
+            depth_compare: CompareFunction::LessEqual,
             stencil: StencilStateDescriptor {
                 front: StencilStateFaceDescriptor::IGNORE,
                 back: StencilStateFaceDescriptor::IGNORE,
@@ -40,7 +41,7 @@ pub fn build_sprite_sheet_pipeline(shaders: &mut Assets<Shader>) -> PipelineDesc
             },
         }),
         color_states: vec![ColorStateDescriptor {
-            format: TextureFormat::Bgra8UnormSrgb,
+            format: TextureFormat::default(),
             color_blend: BlendDescriptor {
                 src_factor: BlendFactor::SrcAlpha,
                 dst_factor: BlendFactor::OneMinusSrcAlpha,
@@ -79,7 +80,7 @@ pub fn build_sprite_pipeline(shaders: &mut Assets<Shader>) -> PipelineDescriptor
         depth_stencil_state: Some(DepthStencilStateDescriptor {
             format: TextureFormat::Depth32Float,
             depth_write_enabled: true,
-            depth_compare: CompareFunction::Less,
+            depth_compare: CompareFunction::LessEqual,
             stencil: StencilStateDescriptor {
                 front: StencilStateFaceDescriptor::IGNORE,
                 back: StencilStateFaceDescriptor::IGNORE,
@@ -88,7 +89,7 @@ pub fn build_sprite_pipeline(shaders: &mut Assets<Shader>) -> PipelineDescriptor
             },
         }),
         color_states: vec![ColorStateDescriptor {
-            format: TextureFormat::Bgra8UnormSrgb,
+            format: TextureFormat::default(),
             color_blend: BlendDescriptor {
                 src_factor: BlendFactor::SrcAlpha,
                 dst_factor: BlendFactor::OneMinusSrcAlpha,
@@ -150,8 +151,8 @@ impl SpriteRenderGraphBuilder for RenderGraph {
 
         let mut pipelines = resources.get_mut::<Assets<PipelineDescriptor>>().unwrap();
         let mut shaders = resources.get_mut::<Assets<Shader>>().unwrap();
-        pipelines.set(SPRITE_PIPELINE_HANDLE, build_sprite_pipeline(&mut shaders));
-        pipelines.set(
+        pipelines.set_untracked(SPRITE_PIPELINE_HANDLE, build_sprite_pipeline(&mut shaders));
+        pipelines.set_untracked(
             SPRITE_SHEET_PIPELINE_HANDLE,
             build_sprite_sheet_pipeline(&mut shaders),
         );

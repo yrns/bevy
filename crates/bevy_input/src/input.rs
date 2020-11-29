@@ -1,6 +1,8 @@
-use std::{collections::HashSet, hash::Hash};
+use bevy_utils::HashSet;
+use std::hash::Hash;
 
 /// A "press-able" input of type `T`
+#[derive(Debug)]
 pub struct Input<T> {
     pressed: HashSet<T>,
     just_pressed: HashSet<T>,
@@ -46,8 +48,26 @@ where
         self.just_released.contains(&input)
     }
 
+    pub fn reset(&mut self, input: T) {
+        self.pressed.remove(&input);
+        self.just_pressed.remove(&input);
+        self.just_released.remove(&input);
+    }
+
     pub fn update(&mut self) {
         self.just_pressed.clear();
         self.just_released.clear();
+    }
+
+    pub fn get_pressed(&self) -> impl ExactSizeIterator<Item = &T> {
+        self.pressed.iter()
+    }
+
+    pub fn get_just_pressed(&self) -> impl ExactSizeIterator<Item = &T> {
+        self.just_pressed.iter()
+    }
+
+    pub fn get_just_released(&self) -> impl ExactSizeIterator<Item = &T> {
+        self.just_released.iter()
     }
 }
