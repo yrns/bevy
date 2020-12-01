@@ -1,19 +1,23 @@
-use bevy::prelude::*;
-use bevy_render::{
-    dispatch::Dispatch,
-    pipeline::{
-        ComputePipeline, ComputePipelineDescriptor, ComputePipelineSpecialization, ComputePipelines,
+use bevy::{
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
+        dispatch::Dispatch,
+        pipeline::{
+            ComputePipeline, ComputePipelineDescriptor, ComputePipelineSpecialization,
+            ComputePipelines,
+        },
+        render_graph::{base::node::COMPUTE_PASS, AssetRenderResourcesNode, RenderGraph},
+        renderer::RenderResources,
+        shader::{ComputeShaderStages, ShaderStage},
     },
-    render_graph::{base::node::COMPUTE_PASS, AssetRenderResourcesNode, RenderGraph},
-    renderer::RenderResources,
-    shader::{ComputeShaderStages, ShaderStage},
 };
 
 fn main() {
     App::build()
-        .add_default_plugins()
+        .add_plugins(DefaultPlugins)
         .add_asset::<PrimeIndices>()
-        .add_startup_system(setup.system())
+        .add_startup_system(setup)
         .run();
 }
 
@@ -53,7 +57,8 @@ void main() {
     indices[index] = collatz_iterations(indices[index]);
 }
 "#;
-#[derive(Default, RenderResources)]
+#[derive(Default, RenderResources, TypeUuid)]
+#[uuid = "9fa71f7a-0a9e-4db5-a25b-5917e7525ed8"]
 struct PrimeIndices {
     #[render_resources(buffer)]
     indices: Vec<u32>,
@@ -67,7 +72,7 @@ struct ComputeComponents {
 
 // Setup our compute pipeline and a "dispatch" component/entity that will dispatch the shader.
 fn setup(
-    mut commands: Commands,
+    commands: &mut Commands,
     mut pipelines: ResMut<Assets<ComputePipelineDescriptor>>,
     mut shaders: ResMut<Assets<Shader>>,
     mut render_graph: ResMut<RenderGraph>,

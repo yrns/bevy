@@ -422,6 +422,7 @@ impl<I, T: RenderResources> Default for RenderResourcesNodeState<I, T> {
 fn render_resources_node_system<T: RenderResources>(
     mut state: Local<RenderResourcesNodeState<Entity, T>>,
     render_resource_context: Res<Box<dyn RenderResourceContext>>,
+    // FIX: names
     mut query: Query<(Entity, &T, &Draw, &mut RenderPipelines)>,
     mut query2: Query<(Entity, &T, &Dispatch, &mut ComputePipelines)>,
 ) {
@@ -438,19 +439,23 @@ fn render_resources_node_system<T: RenderResources>(
         uniform_buffer_arrays.remove_bindings(*entity);
     }
 
-    // update uniforms info
-    for (uniforms, _dispatch, _compute_pipelines) in &mut query2.iter() {
-        state
-            .uniform_buffer_arrays
-            .increment_changed_item_counts(&uniforms);
+    // via @walterpie https://github.com/bevyengine/bevy/pull/139#issuecomment-685299599
+    if let Some((_, first, _, _)) = query2.iter_mut().next() {
+        uniform_buffer_arrays.initialize(first, render_resource_context);
     }
 
-    state
-        .uniform_buffer_arrays
-        .setup_buffer_arrays(render_resource_context, state.dynamic_uniforms);
-    state
-        .uniform_buffer_arrays
-        .update_staging_buffer(render_resource_context);
+    for entity in query2.removed::<T>() {
+        uniform_buffer_arrays.remove_bindings(*entity);
+    }
+
+    for (entity, uniforms, _, mut compute_pipelines) in query2.iter_mut() {
+        uniform_buffer_arrays.prepare_uniform_buffers(entity, uniforms);
+        setup_uniform_texture_resources::<T>(
+            &uniforms,
+            render_resource_context,
+            &mut compute_pipelines.bindings,
+        )
+    }
 
     for (entity, uniforms, draw, mut render_pipelines) in query.iter_mut() {
         if !draw.is_visible {
@@ -628,8 +633,8 @@ fn asset_render_resources_node_system<T: RenderResources + Asset>(
         }
     }
 
-    for (asset_handle, _dispatch, mut compute_pipelines) in &mut query2.iter() {
-        if let Some(asset_bindings) = asset_render_resource_bindings.get(*asset_handle) {
+    for (asset_handle, _dispatch, mut compute_pipelines) in query2.iter_mut() {
+        if let Some(asset_bindings) = asset_render_resource_bindings.get(asset_handle) {
             compute_pipelines.bindings.extend(asset_bindings);
         }
     }

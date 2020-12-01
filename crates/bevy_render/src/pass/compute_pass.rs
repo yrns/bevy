@@ -6,7 +6,7 @@ use bevy_asset::Handle;
 
 pub trait ComputePass {
     fn get_render_context(&self) -> &dyn RenderContext;
-    fn set_pipeline(&mut self, pipeline_handle: Handle<ComputePipelineDescriptor>);
+    fn set_pipeline(&mut self, pipeline_handle: &Handle<ComputePipelineDescriptor>);
     fn set_bind_group(
         &mut self,
         index: u32,

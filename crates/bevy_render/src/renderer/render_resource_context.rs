@@ -1,5 +1,7 @@
 use crate::{
-    pipeline::{BindGroupDescriptorId, ComputePipelineDescriptor, PipelineDescriptor, PipelineLayout},
+    pipeline::{
+        BindGroupDescriptorId, ComputePipelineDescriptor, PipelineDescriptor, PipelineLayout,
+    },
     renderer::{BindGroup, BufferId, BufferInfo, RenderResourceId, SamplerId, TextureId},
     shader::{Shader, ShaderLayout, ShaderStages},
     texture::{SamplerDescriptor, TextureDescriptor},

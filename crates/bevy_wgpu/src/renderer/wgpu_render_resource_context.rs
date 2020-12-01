@@ -490,7 +490,7 @@ impl RenderResourceContext for WgpuRenderResourceContext {
                 push_constant_ranges: &[],
             });
 
-        self.create_shader_module(pipeline_descriptor.shader_stages.compute, shaders);
+        self.create_shader_module(&pipeline_descriptor.shader_stages.compute, shaders);
 
         let shader_modules = self.resources.shader_modules.read();
         let compute_shader_module = shader_modules

@@ -5,6 +5,7 @@ use bevy_render::{
     pipeline::{BindGroupDescriptorId, ComputePipelineDescriptor},
     renderer::{BindGroupId, RenderContext},
 };
+use bevy_utils::tracing::trace;
 
 pub struct WgpuComputePass<'a> {
     pub compute_pass: wgpu::ComputePass<'a>,
@@ -43,7 +44,7 @@ impl<'a> ComputePass for WgpuComputePass<'a> {
                         EMPTY
                     };
 
-                log::trace!(
+                trace!(
                     "set bind group {:?} {:?}: {:?}",
                     bind_group_descriptor_id,
                     dynamic_uniform_indices,
@@ -55,11 +56,11 @@ impl<'a> ComputePass for WgpuComputePass<'a> {
         }
     }
 
-    fn set_pipeline(&mut self, pipeline_handle: Handle<ComputePipelineDescriptor>) {
+    fn set_pipeline(&mut self, pipeline_handle: &Handle<ComputePipelineDescriptor>) {
         let pipeline = self
             .wgpu_resources
             .compute_pipelines
-            .get(&pipeline_handle)
+            .get(pipeline_handle)
             .expect(
             "Attempted to use a pipeline that does not exist in this RenderPass's RenderContext",
         );

@@ -10,12 +10,9 @@ use crate::{
     shader::Shader,
 };
 use bevy_asset::{Assets, Handle};
-use bevy_ecs::{
-    FetchResource, Query, Res, ResMut, ResourceIndex, ResourceQuery, Resources, SystemId,
-    TypeAccess, UnsafeClone,
-};
-use bevy_property::Properties;
-use std::{any::TypeId, sync::Arc};
+use bevy_ecs::{Query, Res, ResMut, SystemParam};
+use bevy_reflect::Reflect;
+use std::sync::Arc;
 use thiserror::Error;
 
 /// A queued command for the compute renderer
@@ -27,7 +24,7 @@ pub enum ComputeCommand {
     SetBindGroup {
         index: u32,
         bind_group: BindGroupId,
-        dynamic_uniform_indices: Option<Arc<Vec<u32>>>,
+        dynamic_uniform_indices: Option<Arc<[u32]>>,
     },
     Dispatch {
         x: u32,
@@ -37,15 +34,15 @@ pub enum ComputeCommand {
 }
 
 /// A component that defines compute dispatching.
-#[derive(Properties)]
+#[derive(Debug, Clone, Reflect)]
 pub struct Dispatch {
     pub only_once: bool,
     pub work_group_size_x: u32,
     pub work_group_size_y: u32,
     pub work_group_size_z: u32,
-    #[property(ignore)]
+    #[reflect(ignore)]
     pub compute_commands: Vec<ComputeCommand>,
-    #[property(ignore)]
+    #[reflect(ignore)]
     pub has_run: bool,
 }
 
@@ -67,8 +64,10 @@ impl Dispatch {
         self.compute_commands.clear();
     }
 
-    pub fn set_pipeline(&mut self, pipeline: Handle<ComputePipelineDescriptor>) {
-        self.compute_command(ComputeCommand::SetPipeline { pipeline });
+    pub fn set_pipeline(&mut self, pipeline: &Handle<ComputePipelineDescriptor>) {
+        self.compute_command(ComputeCommand::SetPipeline {
+            pipeline: pipeline.clone_weak(),
+        });
     }
 
     pub fn set_bind_group(&mut self, index: u32, bind_group: &BindGroup) {
@@ -112,15 +111,18 @@ pub enum DispatchError {
     BufferAllocationFailure,
 }
 
+#[derive(SystemParam)]
 pub struct DispatchContext<'a> {
     pub pipelines: ResMut<'a, Assets<ComputePipelineDescriptor>>,
     pub shaders: ResMut<'a, Assets<Shader>>,
     pub pipeline_compiler: ResMut<'a, ComputePipelineCompiler>,
     pub render_resource_context: Res<'a, Box<dyn RenderResourceContext>>,
     pub shared_buffers: Res<'a, SharedBuffers>,
+    #[system_param(ignore)]
     pub current_pipeline: Option<Handle<ComputePipelineDescriptor>>,
 }
 
+/* FIX:
 impl<'a> UnsafeClone for DispatchContext<'a> {
     unsafe fn unsafe_clone(&self) -> Self {
         Self {
@@ -137,9 +139,12 @@ impl<'a> UnsafeClone for DispatchContext<'a> {
 impl<'a> ResourceQuery for DispatchContext<'a> {
     type Fetch = FetchDispatchContext;
 }
+*/
 
+#[derive(Debug)]
 pub struct FetchDispatchContext;
 
+/* FIX:
 // TODO: derive this impl
 impl<'a> FetchResource<'a> for FetchDispatchContext {
     type Item = DispatchContext<'a>;
@@ -196,6 +201,7 @@ impl<'a> FetchResource<'a> for FetchDispatchContext {
         access
     }
 }
+*/
 
 impl<'a> DispatchContext<'a> {
     pub fn get_uniform_buffer<T: RenderResource>(
@@ -218,7 +224,7 @@ impl<'a> DispatchContext<'a> {
     pub fn set_pipeline(
         &mut self,
         dispatch: &mut Dispatch,
-        pipeline_handle: Handle<ComputePipelineDescriptor>,
+        pipeline_handle: &Handle<ComputePipelineDescriptor>,
         specialization: &ComputePipelineSpecialization,
     ) -> Result<(), DispatchError> {
         let specialized_pipeline = if let Some(specialized_pipeline) = self
@@ -236,14 +242,15 @@ impl<'a> DispatchContext<'a> {
             )
         };
 
-        dispatch.set_pipeline(specialized_pipeline);
-        self.current_pipeline = Some(specialized_pipeline);
+        dispatch.set_pipeline(&specialized_pipeline);
+        self.current_pipeline = Some(specialized_pipeline.clone_weak());
         Ok(())
     }
 
     pub fn get_pipeline_descriptor(&self) -> Result<&ComputePipelineDescriptor, DispatchError> {
         self.current_pipeline
-            .and_then(|handle| self.pipelines.get(&handle))
+            .as_ref()
+            .and_then(|handle| self.pipelines.get(handle))
             .ok_or_else(|| DispatchError::NoPipelineSet)
     }
 
@@ -262,10 +269,11 @@ impl<'a> DispatchContext<'a> {
     ) -> Result<(), DispatchError> {
         let pipeline = self
             .current_pipeline
+            .as_ref()
             .ok_or_else(|| DispatchError::NoPipelineSet)?;
         let pipeline_descriptor = self
             .pipelines
-            .get(&pipeline)
+            .get(pipeline)
             .ok_or_else(|| DispatchError::NonExistentPipeline)?;
         let layout = pipeline_descriptor
             .get_layout()
@@ -297,10 +305,11 @@ impl<'a> DispatchContext<'a> {
     ) -> Result<(), DispatchError> {
         let pipeline = self
             .current_pipeline
+            .as_ref()
             .ok_or_else(|| DispatchError::NoPipelineSet)?;
         let pipeline_descriptor = self
             .pipelines
-            .get(&pipeline)
+            .get(pipeline)
             .ok_or_else(|| DispatchError::NonExistentPipeline)?;
         let layout = pipeline_descriptor
             .get_layout()
@@ -313,7 +322,7 @@ impl<'a> DispatchContext<'a> {
 }
 
 pub fn clear_compute_commands(mut query: Query<&mut Dispatch>) {
-    for mut dispatch in &mut query.iter() {
+    for mut dispatch in query.iter_mut() {
         dispatch.clear_compute_commands();
     }
 }

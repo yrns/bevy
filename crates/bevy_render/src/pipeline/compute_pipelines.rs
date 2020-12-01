@@ -5,9 +5,9 @@ use crate::{
 };
 use bevy_asset::Handle;
 use bevy_ecs::{Query, ResMut};
-use bevy_property::Properties;
+use bevy_reflect::Reflect;
 
-#[derive(Properties, Default, Clone)]
+#[derive(Debug, Default, Clone, Reflect)]
 pub struct ComputePipeline {
     pub pipeline: Handle<ComputePipelineDescriptor>,
     pub specialization: ComputePipelineSpecialization,
@@ -32,10 +32,10 @@ impl ComputePipeline {
     }
 }
 
-#[derive(Properties)]
+#[derive(Debug, Clone, Reflect)]
 pub struct ComputePipelines {
     pub pipelines: Vec<ComputePipeline>,
-    #[property(ignore)]
+    #[reflect(ignore)]
     pub bindings: RenderResourceBindings,
 }
 
@@ -53,7 +53,7 @@ impl ComputePipelines {
         ComputePipelines {
             pipelines: handles
                 .into_iter()
-                .map(|pipeline| ComputePipeline::new(*pipeline))
+                .map(|pipeline| ComputePipeline::new(pipeline.clone_weak()))
                 .collect::<Vec<ComputePipeline>>(),
             ..Default::default()
         }
@@ -74,14 +74,14 @@ pub fn dispatch_compute_pipelines_system(
     mut render_resource_bindings: ResMut<RenderResourceBindings>,
     mut query: Query<(&mut Dispatch, &mut ComputePipelines)>,
 ) {
-    for (mut dispatch, mut render_pipelines) in &mut query.iter() {
+    for (mut dispatch, mut render_pipelines) in query.iter_mut() {
         let render_pipelines = &mut *render_pipelines;
 
         for render_pipeline in render_pipelines.pipelines.iter() {
             dispatch_context
                 .set_pipeline(
                     &mut dispatch,
-                    render_pipeline.pipeline,
+                    &render_pipeline.pipeline,
                     &render_pipeline.specialization,
                 )
                 .unwrap();

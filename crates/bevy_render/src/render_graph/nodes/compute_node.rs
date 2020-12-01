@@ -6,6 +6,7 @@ use crate::{
 };
 use bevy_asset::{Assets, Handle};
 use bevy_ecs::{Resources, World};
+use std::ops::Deref;
 
 pub struct ComputeNode;
 
@@ -36,23 +37,23 @@ impl Node for ComputeNode {
         render_context.begin_compute_pass(&mut |compute_pass| {
             let mut compute_state = ComputeState::default();
 
-            let mut entities = world.query::<&Dispatch>();
-
-            for dispatch in entities.iter() {
+            for dispatch in world.query::<&Dispatch>() {
                 for compute_command in dispatch.compute_commands.iter() {
                     match compute_command {
                         ComputeCommand::SetPipeline { pipeline } => {
                             // TODO: Filter pipelines
-                            compute_pass.set_pipeline(*pipeline);
+                            compute_pass.set_pipeline(pipeline);
                             let descriptor = pipelines.get(pipeline).unwrap();
-                            compute_state.set_pipeline(*pipeline, descriptor);
+                            compute_state.set_pipeline(pipeline, descriptor);
                         }
                         ComputeCommand::SetBindGroup {
                             index,
                             bind_group,
                             dynamic_uniform_indices,
                         } => {
-                            let pipeline = pipelines.get(&compute_state.pipeline.unwrap()).unwrap();
+                            let pipeline = pipelines
+                                .get(compute_state.pipeline.as_ref().unwrap())
+                                .unwrap();
                             let layout = pipeline.get_layout().unwrap();
                             let bind_group_descriptor = layout.get_bind_group(*index).unwrap();
                             compute_pass.set_bind_group(
@@ -61,7 +62,7 @@ impl Node for ComputeNode {
                                 *bind_group,
                                 dynamic_uniform_indices
                                     .as_ref()
-                                    .map(|indices| indices.as_slice()),
+                                    .map(|indices| indices.deref()),
                             );
                             compute_state.set_bind_group(*index, *bind_group);
                         }
@@ -89,11 +90,11 @@ impl ComputeState {
 
     pub fn set_pipeline(
         &mut self,
-        handle: Handle<ComputePipelineDescriptor>,
+        handle: &Handle<ComputePipelineDescriptor>,
         descriptor: &ComputePipelineDescriptor,
     ) {
         self.bind_groups.clear();
-        self.pipeline = Some(handle);
+        self.pipeline = Some(handle.clone_weak());
         let layout = descriptor.get_layout().unwrap();
         self.bind_groups.resize(layout.bind_groups.len(), None);
     }

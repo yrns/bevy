@@ -38,15 +38,14 @@ use camera::{
 };
 use pipeline::{
     ComputePipelineCompiler, ComputePipelineDescriptor, ComputePipelineSpecialization,
-    ComputePipelines, DynamicBinding, IndexFormat, PipelineCompiler, PipelineDescriptor,
-    PipelineSpecialization, PrimitiveTopology, ShaderSpecialization, VertexBufferDescriptors,
+    ComputePipelines, IndexFormat, PipelineCompiler, PipelineDescriptor, PipelineSpecialization,
+    PrimitiveTopology, ShaderSpecialization,
 };
 use render_graph::{
     base::{self, BaseRenderGraphBuilder, BaseRenderGraphConfig, MainPass},
     RenderGraph,
 };
 use renderer::{AssetRenderResourceBindings, RenderResourceBindings};
-use std::ops::Range;
 
 use dispatch::Dispatch;
 #[cfg(feature = "hdr")]
@@ -109,10 +108,6 @@ impl Plugin for RenderPlugin {
             .add_asset::<Shader>()
             .add_asset::<PipelineDescriptor>()
             .add_asset::<ComputePipelineDescriptor>()
-            // yes/no?
-            .add_asset_loader::<Texture, HdrTextureLoader>()
-            .add_asset_loader::<Texture, ImageTextureLoader>()
-            .register_component::<Camera>()
             .register_type::<Camera>()
             .register_type::<Draw>()
             .register_type::<Dispatch>()
@@ -135,7 +130,6 @@ impl Plugin for RenderPlugin {
             .init_resource::<TextureResourceSystemState>()
             .init_resource::<AssetRenderResourceBindings>()
             .init_resource::<ActiveCameras>()
-            .add_system_to_stage(bevy_app::stage::PRE_UPDATE, draw::clear_draw_system)
             .add_system_to_stage(bevy_app::stage::POST_UPDATE, camera::active_cameras_system)
             .add_system_to_stage(
                 bevy_app::stage::POST_UPDATE,
