@@ -209,10 +209,7 @@ impl<'a> DrawContext<'a> {
             .get_layout()
             .ok_or(DrawError::PipelineHasNoLayout)?;
         for bindings in render_resource_bindings.iter_mut() {
-            bindings.update_bind_groups(
-                pipeline_descriptor.get_layout().unwrap(),
-                &**self.render_resource_context,
-            );
+            bindings.update_bind_groups(layout, &**self.render_resource_context);
         }
         for bind_group_descriptor in layout.bind_groups.iter() {
             for bindings in render_resource_bindings.iter_mut() {

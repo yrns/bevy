@@ -111,6 +111,7 @@ pub enum DispatchError {
     BufferAllocationFailure,
 }
 
+// FIX:? this is largely a duplicate of DrawContext, with the exception of set_vertex_buffers_from_bindings
 #[derive(SystemParam)]
 pub struct DispatchContext<'a> {
     pub pipelines: ResMut<'a, Assets<ComputePipelineDescriptor>>,
@@ -218,7 +219,7 @@ impl<'a> DispatchContext<'a> {
     ) -> Result<RenderResourceBinding, DispatchError> {
         self.shared_buffers
             .get_buffer(render_resource, buffer_usage)
-            .ok_or_else(|| DispatchError::BufferAllocationFailure)
+            .ok_or(DispatchError::BufferAllocationFailure)
     }
 
     pub fn set_pipeline(
@@ -251,14 +252,14 @@ impl<'a> DispatchContext<'a> {
         self.current_pipeline
             .as_ref()
             .and_then(|handle| self.pipelines.get(handle))
-            .ok_or_else(|| DispatchError::NoPipelineSet)
+            .ok_or(DispatchError::NoPipelineSet)
     }
 
     pub fn get_pipeline_layout(&self) -> Result<&PipelineLayout, DispatchError> {
         self.get_pipeline_descriptor().and_then(|descriptor| {
             descriptor
                 .get_layout()
-                .ok_or_else(|| DispatchError::PipelineHasNoLayout)
+                .ok_or(DispatchError::PipelineHasNoLayout)
         })
     }
 
@@ -270,14 +271,14 @@ impl<'a> DispatchContext<'a> {
         let pipeline = self
             .current_pipeline
             .as_ref()
-            .ok_or_else(|| DispatchError::NoPipelineSet)?;
+            .ok_or(DispatchError::NoPipelineSet)?;
         let pipeline_descriptor = self
             .pipelines
             .get(pipeline)
-            .ok_or_else(|| DispatchError::NonExistentPipeline)?;
+            .ok_or(DispatchError::NonExistentPipeline)?;
         let layout = pipeline_descriptor
             .get_layout()
-            .ok_or_else(|| DispatchError::PipelineHasNoLayout)?;
+            .ok_or(DispatchError::PipelineHasNoLayout)?;
         for bindings in render_resource_bindings.iter_mut() {
             bindings.update_bind_groups(
                 pipeline_descriptor.get_layout().unwrap(),
@@ -306,14 +307,14 @@ impl<'a> DispatchContext<'a> {
         let pipeline = self
             .current_pipeline
             .as_ref()
-            .ok_or_else(|| DispatchError::NoPipelineSet)?;
+            .ok_or(DispatchError::NoPipelineSet)?;
         let pipeline_descriptor = self
             .pipelines
             .get(pipeline)
-            .ok_or_else(|| DispatchError::NonExistentPipeline)?;
+            .ok_or(DispatchError::NonExistentPipeline)?;
         let layout = pipeline_descriptor
             .get_layout()
-            .ok_or_else(|| DispatchError::PipelineHasNoLayout)?;
+            .ok_or(DispatchError::PipelineHasNoLayout)?;
         let bind_group_descriptor = &layout.bind_groups[index as usize];
         self.render_resource_context
             .create_bind_group(bind_group_descriptor.id, bind_group);
