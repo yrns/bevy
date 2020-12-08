@@ -2,7 +2,7 @@ use super::{state_descriptors::PrimitiveTopology, IndexFormat, PipelineDescripto
 use crate::{
     pipeline::{BindType, InputStepMode, VertexBufferDescriptor},
     renderer::RenderResourceContext,
-    shader::{Shader, ShaderSource},
+    shader::{Shader, ShaderError, ShaderSource},
 };
 use bevy_asset::{Assets, Handle};
 use bevy_reflect::Reflect;
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct PipelineSpecialization {
     pub shader_specialization: ShaderSpecialization,
     pub primitive_topology: PrimitiveTopology,
-    pub dynamic_bindings: Vec<String>,
+    pub dynamic_bindings: HashSet<String>,
     pub index_format: IndexFormat,
     pub vertex_buffer_descriptor: VertexBufferDescriptor,
     pub sample_count: u32,
@@ -60,6 +60,7 @@ struct SpecializedPipeline {
 #[derive(Debug, Default)]
 pub struct PipelineCompiler {
     specialized_shaders: HashMap<Handle<Shader>, Vec<SpecializedShader>>,
+    specialized_shader_pipelines: HashMap<Handle<Shader>, Vec<Handle<PipelineDescriptor>>>,
     specialized_pipelines: HashMap<Handle<PipelineDescriptor>, Vec<SpecializedPipeline>>,
 }
 
@@ -70,7 +71,7 @@ impl PipelineCompiler {
         shaders: &mut Assets<Shader>,
         shader_handle: &Handle<Shader>,
         shader_specialization: &ShaderSpecialization,
-    ) -> Handle<Shader> {
+    ) -> Result<Handle<Shader>, ShaderError> {
         let specialized_shaders = self
             .specialized_shaders
             .entry(shader_handle.clone_weak())
@@ -80,7 +81,7 @@ impl PipelineCompiler {
 
         // don't produce new shader if the input source is already spirv
         if let ShaderSource::Spirv(_) = shader.source {
-            return shader_handle.clone_weak();
+            return Ok(shader_handle.clone_weak());
         }
 
         if let Some(specialized_shader) =
@@ -91,7 +92,7 @@ impl PipelineCompiler {
                 })
         {
             // if shader has already been compiled with current configuration, use existing shader
-            specialized_shader.shader.clone_weak()
+            Ok(specialized_shader.shader.clone_weak())
         } else {
             // if no shader exists with the current configuration, create new shader and compile
             let shader_def_vec = shader_specialization
@@ -100,14 +101,14 @@ impl PipelineCompiler {
                 .cloned()
                 .collect::<Vec<String>>();
             let compiled_shader =
-                render_resource_context.get_specialized_shader(shader, Some(&shader_def_vec));
+                render_resource_context.get_specialized_shader(shader, Some(&shader_def_vec))?;
             let specialized_handle = shaders.add(compiled_shader);
             let weak_specialized_handle = specialized_handle.clone_weak();
             specialized_shaders.push(SpecializedShader {
                 shader: specialized_handle,
                 specialization: shader_specialization.clone(),
             });
-            weak_specialized_handle
+            Ok(weak_specialized_handle)
         }
     }
 
@@ -146,6 +147,7 @@ impl PipelineCompiler {
                 s,
                 &pipeline_specialization.shader_specialization,
             )
+            .unwrap()
         });
 
         let mut layout = render_resource_context.reflect_pipeline_layout(
@@ -212,7 +214,7 @@ impl PipelineCompiler {
                     .push(compiled_vertex_attribute);
             } else {
                 panic!(
-                    "Attribute {} is required by shader, but not supplied by mesh. Either remove the attribute from the shader or supply the attribute ({}) to the mesh. ",
+                    "Attribute {} is required by shader, but not supplied by mesh. Either remove the attribute from the shader or supply the attribute ({}) to the mesh.",
                     shader_vertex_attribute.name,
                     shader_vertex_attribute.name,
                 );
@@ -227,6 +229,14 @@ impl PipelineCompiler {
         specialized_descriptor.sample_count = pipeline_specialization.sample_count;
         specialized_descriptor.primitive_topology = pipeline_specialization.primitive_topology;
         specialized_descriptor.index_format = pipeline_specialization.index_format;
+
+        // track specialized shader pipelines
+        for s in specialized_descriptor.shader_stages.iter() {
+            self.specialized_shader_pipelines
+                .entry(s.clone_weak())
+                .or_insert_with(Default::default)
+                .push(source_pipeline.clone_weak());
+        }
 
         let specialized_pipeline_handle = pipelines.add(specialized_descriptor);
         render_resource_context.create_render_pipeline(
@@ -272,5 +282,57 @@ impl PipelineCompiler {
                     .map(|specialized_pipeline| &specialized_pipeline.pipeline)
             })
             .flatten()
+    }
+
+    /// Update specialized shaders and remove any related specialized
+    /// pipelines and assets.
+    pub fn update_shader(
+        &mut self,
+        shader: &Handle<Shader>,
+        pipelines: &mut Assets<PipelineDescriptor>,
+        shaders: &mut Assets<Shader>,
+        render_resource_context: &dyn RenderResourceContext,
+    ) -> Result<(), ShaderError> {
+        if let Some(specialized_shaders) = self.specialized_shaders.get_mut(shader) {
+            for specialized_shader in specialized_shaders {
+                // Recompile specialized shader. If it fails, we bail immediately.
+                let shader_def_vec = specialized_shader
+                    .specialization
+                    .shader_defs
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<String>>();
+                let new_handle =
+                    shaders.add(render_resource_context.get_specialized_shader(
+                        shaders.get(shader).unwrap(),
+                        Some(&shader_def_vec),
+                    )?);
+
+                // Replace handle and remove old from assets.
+                let old_handle = std::mem::replace(&mut specialized_shader.shader, new_handle);
+                shaders.remove(&old_handle);
+
+                // Find source pipelines that use the old specialized
+                // shader, and remove from tracking.
+                if let Some(source_pipelines) =
+                    self.specialized_shader_pipelines.remove(&old_handle)
+                {
+                    // Remove all specialized pipelines from tracking
+                    // and asset storage. They will be rebuilt on next
+                    // draw.
+                    for source_pipeline in source_pipelines {
+                        if let Some(specialized_pipelines) =
+                            self.specialized_pipelines.remove(&source_pipeline)
+                        {
+                            for p in specialized_pipelines {
+                                pipelines.remove(p.pipeline);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }

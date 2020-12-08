@@ -46,8 +46,8 @@ use render_graph::{
     RenderGraph,
 };
 use renderer::{AssetRenderResourceBindings, RenderResourceBindings};
-
 use dispatch::Dispatch;
+use shader::ShaderLoader;
 #[cfg(feature = "hdr")]
 use texture::HdrTextureLoader;
 #[cfg(feature = "png")]
@@ -92,6 +92,8 @@ impl Plugin for RenderPlugin {
         {
             app.init_asset_loader::<HdrTextureLoader>();
         }
+
+        app.init_asset_loader::<ShaderLoader>();
 
         if app.resources().get::<ClearColor>().is_none() {
             app.resources_mut().insert(ClearColor::default());
@@ -145,6 +147,7 @@ impl Plugin for RenderPlugin {
                 camera::visible_entities_system,
             )
             // TODO: turn these "resource systems" into graph nodes and remove the RENDER_RESOURCE stage
+            .add_system_to_stage(stage::RENDER_RESOURCE, shader::shader_update_system)
             .add_system_to_stage(stage::RENDER_RESOURCE, mesh::mesh_resource_provider_system)
             .add_system_to_stage(stage::RENDER_RESOURCE, Texture::texture_resource_system)
             .add_system_to_stage(
@@ -168,11 +171,11 @@ impl Plugin for RenderPlugin {
             render_graph.add_base_graph(config, &msaa);
             let mut active_cameras = resources.get_mut::<ActiveCameras>().unwrap();
             if config.add_3d_camera {
-                active_cameras.add(base::camera::CAMERA3D);
+                active_cameras.add(base::camera::CAMERA_3D);
             }
 
             if config.add_2d_camera {
-                active_cameras.add(base::camera::CAMERA2D);
+                active_cameras.add(base::camera::CAMERA_2D);
             }
         }
     }

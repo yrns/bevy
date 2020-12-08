@@ -118,7 +118,7 @@ pub struct DispatchContext<'a> {
     pub shaders: ResMut<'a, Assets<Shader>>,
     pub pipeline_compiler: ResMut<'a, ComputePipelineCompiler>,
     pub render_resource_context: Res<'a, Box<dyn RenderResourceContext>>,
-    pub shared_buffers: Res<'a, SharedBuffers>,
+    pub shared_buffers: ResMut<'a, SharedBuffers>,
     #[system_param(ignore)]
     pub current_pipeline: Option<Handle<ComputePipelineDescriptor>>,
 }
@@ -204,21 +204,14 @@ impl<'a> FetchResource<'a> for FetchDispatchContext {
 }
 */
 
+// FIX: dupe of DrawContext
 impl<'a> DispatchContext<'a> {
     pub fn get_uniform_buffer<T: RenderResource>(
-        &self,
+        &mut self,
         render_resource: &T,
-    ) -> Result<RenderResourceBinding, DispatchError> {
-        self.get_buffer(render_resource, BufferUsage::UNIFORM)
-    }
-
-    pub fn get_buffer<T: RenderResource>(
-        &self,
-        render_resource: &T,
-        buffer_usage: BufferUsage,
     ) -> Result<RenderResourceBinding, DispatchError> {
         self.shared_buffers
-            .get_buffer(render_resource, buffer_usage)
+            .get_uniform_buffer(&**self.render_resource_context, render_resource)
             .ok_or(DispatchError::BufferAllocationFailure)
     }
 

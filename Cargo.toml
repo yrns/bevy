@@ -275,6 +275,10 @@ name = "scene"
 path = "examples/scene/scene.rs"
 
 [[example]]
+name = "hot_shader_reloading"
+path = "examples/shader/hot_shader_reloading.rs"
+
+[[example]]
 name = "mesh_custom_attribute"
 path = "examples/shader/mesh_custom_attribute.rs"
 
@@ -329,6 +333,10 @@ path = "examples/window/multiple_windows.rs"
 [[example]]
 name = "window_settings"
 path = "examples/window/window_settings.rs"
+
+[[example]]
+name = "removal_detection"
+path = "examples/ecs/removal_detection.rs"
 
 [[example]]
 name = "hello_wasm"

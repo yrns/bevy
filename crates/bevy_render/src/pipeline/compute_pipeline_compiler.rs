@@ -81,7 +81,7 @@ impl ComputePipelineCompiler {
                 .iter()
                 .cloned()
                 .collect::<Vec<String>>();
-            let compiled_shader = shader.get_spirv_shader(Some(&shader_def_vec));
+            let compiled_shader = shader.get_spirv_shader(Some(&shader_def_vec)).unwrap();
             let specialized_handle = shaders.add(compiled_shader);
             let weak_specialized_handle = specialized_handle.clone_weak();
             specialized_shaders.push(SpecializedShader {
