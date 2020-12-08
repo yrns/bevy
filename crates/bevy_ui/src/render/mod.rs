@@ -56,16 +56,16 @@ pub fn build_ui_pipeline(shaders: &mut Assets<Shader>) -> PipelineDescriptor {
             },
             write_mask: ColorWrite::ALL,
         }],
-        ..PipelineDescriptor::new(ShaderStages {
-            vertex: shaders.add(Shader::from_glsl(
+        ..PipelineDescriptor::new(ShaderStages::new(
+            shaders.add(Shader::from_glsl(
                 ShaderStage::Vertex,
                 include_str!("ui.vert"),
             )),
-            fragment: Some(shaders.add(Shader::from_glsl(
+            Some(shaders.add(Shader::from_glsl(
                 ShaderStage::Fragment,
                 include_str!("ui.frag"),
             ))),
-        })
+        ))
     }
 }
 

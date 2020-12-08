@@ -394,21 +394,28 @@ impl RenderResourceContext for WgpuRenderResourceContext {
             .map(|c| c.wgpu_into())
             .collect::<Vec<wgpu::ColorStateDescriptor>>();
 
-        self.create_shader_module(&pipeline_descriptor.shader_stages.vertex, shaders);
+        if let Some(ref vertex_handle) = pipeline_descriptor.shader_stages.vertex {
+            self.create_shader_module(vertex_handle, shaders);
+        }
 
         if let Some(ref fragment_handle) = pipeline_descriptor.shader_stages.fragment {
             self.create_shader_module(fragment_handle, shaders);
         }
 
         let shader_modules = self.resources.shader_modules.read();
-        let vertex_shader_module = shader_modules
-            .get(&pipeline_descriptor.shader_stages.vertex)
+
+        let vertex_shader_module = pipeline_descriptor
+            .shader_stages
+            .vertex
+            .as_ref()
+            .map(|h| shader_modules.get(h).unwrap())
             .unwrap();
 
-        let fragment_shader_module = match pipeline_descriptor.shader_stages.fragment {
-            Some(ref fragment_handle) => Some(shader_modules.get(fragment_handle).unwrap()),
-            None => None,
-        };
+        let fragment_shader_module = pipeline_descriptor
+            .shader_stages
+            .fragment
+            .as_ref()
+            .map(|h| shader_modules.get(h).unwrap());
 
         let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
             label: None,
@@ -417,13 +424,12 @@ impl RenderResourceContext for WgpuRenderResourceContext {
                 module: &vertex_shader_module,
                 entry_point: "main",
             },
-            fragment_stage: match pipeline_descriptor.shader_stages.fragment {
-                Some(_) => Some(wgpu::ProgrammableStageDescriptor {
+            fragment_stage: fragment_shader_module.map(|module| {
+                wgpu::ProgrammableStageDescriptor {
+                    module,
                     entry_point: "main",
-                    module: fragment_shader_module.as_ref().unwrap(),
-                }),
-                None => None,
-            },
+                }
+            }),
             rasterization_state: pipeline_descriptor
                 .rasterization_state
                 .as_ref()
@@ -490,12 +496,15 @@ impl RenderResourceContext for WgpuRenderResourceContext {
                 push_constant_ranges: &[],
             });
 
-        self.create_shader_module(&pipeline_descriptor.shader_stages.compute, shaders);
+        let compute_shader = pipeline_descriptor
+            .shader_stages
+            .compute
+            .as_ref()
+            .expect("has compute shader");
+        self.create_shader_module(compute_shader, shaders);
 
         let shader_modules = self.resources.shader_modules.read();
-        let compute_shader_module = shader_modules
-            .get(&pipeline_descriptor.shader_stages.compute)
-            .unwrap();
+        let compute_shader_module = shader_modules.get(compute_shader).unwrap();
 
         let compute_pipeline_descriptor = wgpu::ComputePipelineDescriptor {
             label: None,

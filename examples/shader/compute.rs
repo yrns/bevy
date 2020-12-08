@@ -9,7 +9,7 @@ use bevy::{
         },
         render_graph::{base::node::COMPUTE_PASS, AssetRenderResourcesNode, RenderGraph},
         renderer::RenderResources,
-        shader::{ComputeShaderStages, ShaderStage},
+        shader::{ShaderStage, ShaderStages},
     },
 };
 
@@ -81,7 +81,7 @@ fn setup(
     let compute = shaders.add(Shader::from_glsl(ShaderStage::Compute, COMPUTE_SHADER));
 
     // Create pipeline..
-    let pipeline = ComputePipelineDescriptor::new(ComputeShaderStages { compute });
+    let pipeline = ComputePipelineDescriptor::new(ShaderStages::compute(compute));
     let pipeline_handle = pipelines.add(pipeline);
 
     render_graph.add_system_node(

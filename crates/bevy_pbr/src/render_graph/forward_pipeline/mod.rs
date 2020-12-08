@@ -48,15 +48,15 @@ pub(crate) fn build_forward_pipeline(shaders: &mut Assets<Shader>) -> PipelineDe
             },
             write_mask: ColorWrite::ALL,
         }],
-        ..PipelineDescriptor::new(ShaderStages {
-            vertex: shaders.add(Shader::from_glsl(
+        ..PipelineDescriptor::new(ShaderStages::new(
+            shaders.add(Shader::from_glsl(
                 ShaderStage::Vertex,
                 include_str!("forward.vert"),
             )),
-            fragment: Some(shaders.add(Shader::from_glsl(
+            Some(shaders.add(Shader::from_glsl(
                 ShaderStage::Fragment,
                 include_str!("forward.frag"),
             ))),
-        })
+        ))
     }
 }

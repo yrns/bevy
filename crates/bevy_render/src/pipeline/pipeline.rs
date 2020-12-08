@@ -7,7 +7,7 @@ use super::{
     PipelineLayout, StencilStateDescriptor,
 };
 use crate::{
-    shader::{ComputeShaderStages, Shader, ShaderStages},
+    shader::{Shader, ShaderStages},
     texture::TextureFormat,
 };
 use bevy_reflect::TypeUuid;
@@ -124,11 +124,11 @@ impl PipelineDescriptor {
 pub struct ComputePipelineDescriptor {
     pub name: Option<String>,
     pub layout: Option<PipelineLayout>,
-    pub shader_stages: ComputeShaderStages,
+    pub shader_stages: ShaderStages,
 }
 
 impl ComputePipelineDescriptor {
-    pub fn new(shader_stages: ComputeShaderStages) -> Self {
+    pub fn new(shader_stages: ShaderStages) -> Self {
         ComputePipelineDescriptor {
             name: None,
             layout: None,

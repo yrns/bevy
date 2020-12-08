@@ -138,24 +138,15 @@ impl PipelineCompiler {
     ) -> Handle<PipelineDescriptor> {
         let source_descriptor = pipelines.get(source_pipeline).unwrap();
         let mut specialized_descriptor = source_descriptor.clone();
-        specialized_descriptor.shader_stages.vertex = self.compile_shader(
-            render_resource_context,
-            shaders,
-            &specialized_descriptor.shader_stages.vertex,
-            &pipeline_specialization.shader_specialization,
-        );
-        specialized_descriptor.shader_stages.fragment = specialized_descriptor
-            .shader_stages
-            .fragment
-            .as_ref()
-            .map(|fragment| {
-                self.compile_shader(
-                    render_resource_context,
-                    shaders,
-                    fragment,
-                    &pipeline_specialization.shader_specialization,
-                )
-            });
+
+        specialized_descriptor.shader_stages = source_descriptor.shader_stages.map(|s| {
+            self.compile_shader(
+                render_resource_context,
+                shaders,
+                s,
+                &pipeline_specialization.shader_specialization,
+            )
+        });
 
         let mut layout = render_resource_context.reflect_pipeline_layout(
             &shaders,

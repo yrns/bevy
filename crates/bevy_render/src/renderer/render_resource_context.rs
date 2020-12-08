@@ -90,7 +90,7 @@ pub trait RenderResourceContext: Downcast + Send + Sync + 'static {
             .iter()
             .map(|handle| {
                 shaders
-                    .get(&handle)
+                    .get(handle)
                     .unwrap()
                     .reflect_layout(enforce_bevy_conventions)
                     .unwrap()

@@ -54,16 +54,16 @@ pub fn build_sprite_sheet_pipeline(shaders: &mut Assets<Shader>) -> PipelineDesc
             },
             write_mask: ColorWrite::ALL,
         }],
-        ..PipelineDescriptor::new(ShaderStages {
-            vertex: shaders.add(Shader::from_glsl(
+        ..PipelineDescriptor::new(ShaderStages::new(
+            shaders.add(Shader::from_glsl(
                 ShaderStage::Vertex,
                 include_str!("sprite_sheet.vert"),
             )),
-            fragment: Some(shaders.add(Shader::from_glsl(
+            Some(shaders.add(Shader::from_glsl(
                 ShaderStage::Fragment,
                 include_str!("sprite_sheet.frag"),
             ))),
-        })
+        ))
     }
 }
 
@@ -102,16 +102,16 @@ pub fn build_sprite_pipeline(shaders: &mut Assets<Shader>) -> PipelineDescriptor
             },
             write_mask: ColorWrite::ALL,
         }],
-        ..PipelineDescriptor::new(ShaderStages {
-            vertex: shaders.add(Shader::from_glsl(
+        ..PipelineDescriptor::new(ShaderStages::new(
+            shaders.add(Shader::from_glsl(
                 ShaderStage::Vertex,
                 include_str!("sprite.vert"),
             )),
-            fragment: Some(shaders.add(Shader::from_glsl(
+            Some(shaders.add(Shader::from_glsl(
                 ShaderStage::Fragment,
                 include_str!("sprite.frag"),
             ))),
-        })
+        ))
     }
 }
 

@@ -147,58 +147,48 @@ impl Shader {
     }
 }
 
-/// Vertex and fragment stages in a shader program
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+/// Shader stages in a shader program
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub struct ShaderStages {
-    pub vertex: Handle<Shader>,
+    pub vertex: Option<Handle<Shader>>,
     pub fragment: Option<Handle<Shader>>,
-}
-
-pub struct ShaderStagesIterator<'a> {
-    shader_stages: &'a ShaderStages,
-    state: u32,
-}
-
-impl<'a> Iterator for ShaderStagesIterator<'a> {
-    type Item = Handle<Shader>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let ret = match self.state {
-            0 => Some(self.shader_stages.vertex.clone_weak()),
-            1 => self.shader_stages.fragment.as_ref().map(|h| h.clone_weak()),
-            _ => None,
-        };
-        self.state += 1;
-        ret
-    }
+    pub compute: Option<Handle<Shader>>,
 }
 
 impl ShaderStages {
-    pub fn new(vertex_shader: Handle<Shader>) -> Self {
+    pub fn new(vertex: Handle<Shader>, fragment: Option<Handle<Shader>>) -> Self {
         ShaderStages {
-            vertex: vertex_shader,
-            fragment: None,
+            vertex: Some(vertex),
+            fragment,
+            ..Default::default()
         }
     }
 
-    pub fn iter(&self) -> ShaderStagesIterator {
-        ShaderStagesIterator {
-            shader_stages: &self,
-            state: 0,
+    pub fn compute(compute: Handle<Shader>) -> Self {
+        ShaderStages {
+            compute: Some(compute),
+            ..Default::default()
         }
     }
-}
 
-/// Compute stages in a shader program
-#[derive(Clone, Debug)]
-pub struct ComputeShaderStages {
-    pub compute: Handle<Shader>,
-}
+    pub fn iter(&self) -> impl Iterator<Item = &Handle<Shader>> {
+        vec![
+            self.vertex.as_ref(),
+            self.fragment.as_ref(),
+            self.compute.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+    }
 
-impl ComputeShaderStages {
-    pub fn new(compute_shader: Handle<Shader>) -> Self {
-        Self {
-            compute: compute_shader,
+    pub fn map<F>(&self, mut f: F) -> Self
+    where
+        F: FnMut(&Handle<Shader>) -> Handle<Shader>,
+    {
+        ShaderStages {
+            vertex: self.vertex.as_ref().map(|s| f(s)),
+            fragment: self.fragment.as_ref().map(|s| f(s)),
+            compute: self.compute.as_ref().map(|s| f(s)),
         }
     }
 }

@@ -119,16 +119,30 @@ impl ComputePipelineCompiler {
     ) -> Handle<ComputePipelineDescriptor> {
         let source_descriptor = pipelines.get(source_pipeline).unwrap();
         let mut specialized_descriptor = source_descriptor.clone();
-        specialized_descriptor.shader_stages.compute = self.compile_shader(
-            shaders,
-            &specialized_descriptor.shader_stages.compute,
-            &pipeline_specialization.shader_specialization,
+
+        // FIX: use map?
+        specialized_descriptor.shader_stages.compute = Some(
+            self.compile_shader(
+                shaders,
+                &specialized_descriptor
+                    .shader_stages
+                    .compute
+                    .expect("has compute shader"),
+                &pipeline_specialization.shader_specialization,
+            ),
         );
 
         //specialized_descriptor.reflect_layout(shaders, &pipeline_specialization.dynamic_bindings);
 
+        // FIX: use iter?
         let mut shader_layouts = vec![shaders
-            .get(&specialized_descriptor.shader_stages.compute)
+            .get(
+                specialized_descriptor
+                    .shader_stages
+                    .compute
+                    .as_ref()
+                    .expect("has compute shader"),
+            )
             .unwrap()
             .reflect_layout(true)
             .unwrap()];
