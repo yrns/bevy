@@ -36,17 +36,17 @@ use bevy_asset::AddAsset;
 use camera::{
     ActiveCameras, Camera, OrthographicProjection, PerspectiveProjection, VisibleEntities,
 };
+use dispatch::Dispatch;
 use pipeline::{
     ComputePipelineCompiler, ComputePipelineDescriptor, ComputePipelineSpecialization,
-    ComputePipelines, IndexFormat, PipelineCompiler, PipelineDescriptor, PipelineSpecialization,
-    PrimitiveTopology, ShaderSpecialization,
+    ComputePipelines, IndexFormat, PipelineDescriptor, PrimitiveTopology, RenderPipelineCompiler,
+    RenderPipelineSpecialization, ShaderSpecialization,
 };
 use render_graph::{
     base::{self, BaseRenderGraphBuilder, BaseRenderGraphConfig, MainPass},
     RenderGraph,
 };
 use renderer::{AssetRenderResourceBindings, RenderResourceBindings};
-use dispatch::Dispatch;
 use shader::ShaderLoader;
 #[cfg(feature = "hdr")]
 use texture::HdrTextureLoader;
@@ -123,10 +123,10 @@ impl Plugin for RenderPlugin {
             .register_type::<ShaderSpecialization>()
             .register_type::<PrimitiveTopology>()
             .register_type::<IndexFormat>()
-            .register_type::<PipelineSpecialization>()
+            .register_type::<RenderPipelineSpecialization>()
             .register_type::<ComputePipelineSpecialization>()
             .init_resource::<RenderGraph>()
-            .init_resource::<PipelineCompiler>()
+            .init_resource::<RenderPipelineCompiler>()
             .init_resource::<ComputePipelineCompiler>()
             .init_resource::<RenderResourceBindings>()
             .init_resource::<TextureResourceSystemState>()

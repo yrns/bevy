@@ -1,5 +1,7 @@
 use crate::{
-    pipeline::{PipelineCompiler, PipelineDescriptor, PipelineLayout, PipelineSpecialization},
+    pipeline::{
+        PipelineDescriptor, PipelineLayout, RenderPipelineCompiler, RenderPipelineSpecialization,
+    },
     renderer::{
         AssetRenderResourceBindings, BindGroup, BindGroupId, BufferId, RenderResource,
         RenderResourceBinding, RenderResourceBindings, RenderResourceContext, SharedBuffers,
@@ -127,7 +129,7 @@ pub struct DrawContext<'a> {
     pub pipelines: ResMut<'a, Assets<PipelineDescriptor>>,
     pub shaders: ResMut<'a, Assets<Shader>>,
     pub asset_render_resource_bindings: ResMut<'a, AssetRenderResourceBindings>,
-    pub pipeline_compiler: ResMut<'a, PipelineCompiler>,
+    pub pipeline_compiler: ResMut<'a, RenderPipelineCompiler>,
     pub render_resource_context: Res<'a, Box<dyn RenderResourceContext>>,
     pub shared_buffers: ResMut<'a, SharedBuffers>,
     #[system_param(ignore)]
@@ -151,7 +153,7 @@ impl<'a> DrawContext<'a> {
         &mut self,
         draw: &mut Draw,
         pipeline_handle: &Handle<PipelineDescriptor>,
-        specialization: &PipelineSpecialization,
+        specialization: &RenderPipelineSpecialization,
     ) -> Result<(), DrawError> {
         let specialized_pipeline = if let Some(specialized_pipeline) = self
             .pipeline_compiler

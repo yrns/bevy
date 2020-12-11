@@ -1,6 +1,5 @@
 mod bind_group;
 mod binding;
-mod compute_pipeline_compiler;
 mod compute_pipelines;
 #[allow(clippy::module_inception)]
 mod pipeline;
@@ -13,7 +12,6 @@ mod vertex_format;
 
 pub use bind_group::*;
 pub use binding::*;
-pub use compute_pipeline_compiler::*;
 pub use compute_pipelines::*;
 pub use pipeline::*;
 pub use pipeline_compiler::*;

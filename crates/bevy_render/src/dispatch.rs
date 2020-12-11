@@ -4,8 +4,8 @@ use crate::{
         PipelineLayout,
     },
     renderer::{
-        BindGroup, BindGroupId, BufferUsage, RenderResource, RenderResourceBinding,
-        RenderResourceBindings, RenderResourceContext, SharedBuffers,
+        BindGroup, BindGroupId, RenderResource, RenderResourceBinding, RenderResourceBindings,
+        RenderResourceContext, SharedBuffers,
     },
     shader::Shader,
 };

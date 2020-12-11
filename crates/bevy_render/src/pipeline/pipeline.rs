@@ -4,14 +4,123 @@ use super::{
         CompareFunction, CullMode, DepthStencilStateDescriptor, FrontFace, IndexFormat,
         PrimitiveTopology, RasterizationStateDescriptor, StencilStateFaceDescriptor,
     },
-    PipelineLayout, StencilStateDescriptor,
+    ComputePipelineSpecialization, InputStepMode, PipelineLayout, PipelineSpecialization,
+    RenderPipelineSpecialization, StencilStateDescriptor, VertexBufferDescriptor,
 };
 use crate::{
+    renderer::{RenderResourceBindings, RenderResourceContext},
     shader::{Shader, ShaderStages},
     texture::TextureFormat,
 };
+use bevy_asset::{Asset, Assets, Handle};
 use bevy_reflect::TypeUuid;
+use bevy_reflect::{Reflect, ReflectComponent};
 
+pub trait Descriptor: std::fmt::Debug + Clone + Asset {
+    type Specialization: PipelineSpecialization;
+
+    // fn name() -> Option<&'a str>;
+    // fn layout() -> Option<&'a PipelineLayout>;
+    fn get_shader_stages<'a>(&'a self) -> &'a ShaderStages;
+    // fn get_layout(&self) -> Option<&PipelineLayout>;
+    // fn get_layout_mut(&mut self) -> Option<&mut PipelineLayout>;
+
+    fn specialize_from(
+        &self,
+        specialization: &Self::Specialization,
+        shader_stages: ShaderStages,
+        layout: PipelineLayout,
+    ) -> Self;
+
+    fn create_pipeline(
+        &self,
+        render_resource_context: &dyn RenderResourceContext,
+        handle: Handle<Self>,
+        shaders: &Assets<Shader>,
+    );
+}
+
+pub type RenderPipeline = Pipeline<PipelineDescriptor>;
+pub type ComputePipeline = Pipeline<ComputePipelineDescriptor>;
+
+#[derive(Debug, Clone, Reflect)]
+pub struct Pipeline<T: Descriptor> {
+    pub pipeline: Handle<T>,
+    pub specialization: T::Specialization,
+    /// used to track if PipelineSpecialization::dynamic_bindings is in sync with RenderResourceBindings
+    pub dynamic_bindings_generation: usize,
+}
+
+// FIX:? Handle<Asset<T>> implements Default (irrespective of T), but
+// deriving seems to insist T be Default
+impl<T: Descriptor> Default for Pipeline<T> {
+    fn default() -> Self {
+        Self {
+            pipeline: Default::default(),
+            specialization: Default::default(),
+            dynamic_bindings_generation: Default::default(),
+        }
+    }
+}
+
+impl<T: Descriptor> Pipeline<T> {
+    pub fn new(pipeline: Handle<T>) -> Self {
+        Pipeline {
+            specialization: Default::default(),
+            pipeline,
+            dynamic_bindings_generation: std::usize::MAX,
+        }
+    }
+
+    pub fn specialized(pipeline: Handle<T>, specialization: T::Specialization) -> Self {
+        Pipeline {
+            pipeline,
+            specialization,
+            dynamic_bindings_generation: std::usize::MAX,
+        }
+    }
+}
+
+pub type RenderPipelines = Pipelines<PipelineDescriptor>;
+pub type ComputePipelines = Pipelines<ComputePipelineDescriptor>;
+
+#[derive(Debug, Clone, Reflect)]
+#[reflect(Component)]
+pub struct Pipelines<T: Descriptor> {
+    pub pipelines: Vec<Pipeline<T>>,
+    #[reflect(ignore)]
+    pub bindings: RenderResourceBindings,
+}
+
+impl<T: Descriptor> Pipelines<T> {
+    pub fn from_pipelines(pipelines: Vec<Pipeline<T>>) -> Self {
+        Self {
+            pipelines,
+            ..Default::default()
+        }
+    }
+
+    pub fn from_handles<'a, I: IntoIterator<Item = &'a Handle<T>>>(handles: I) -> Self {
+        Pipelines {
+            pipelines: handles
+                .into_iter()
+                .map(|pipeline| Pipeline::new(pipeline.clone_weak()))
+                .collect::<Vec<_>>(),
+            ..Default::default()
+        }
+    }
+}
+
+impl<T: Descriptor> Default for Pipelines<T> {
+    fn default() -> Self {
+        Self {
+            bindings: Default::default(),
+            pipelines: vec![Pipeline::<T>::default()],
+        }
+    }
+}
+
+// Rename RenderPipelineDescriptor?
 #[derive(Clone, Debug, TypeUuid)]
 #[uuid = "ebfc1d11-a2a4-44cb-8f12-c49cc631146c"]
 pub struct PipelineDescriptor {
@@ -118,6 +227,82 @@ impl PipelineDescriptor {
     }
 }
 
+impl Descriptor for PipelineDescriptor {
+    type Specialization = RenderPipelineSpecialization;
+
+    fn get_shader_stages<'a>(&'a self) -> &'a ShaderStages {
+        &self.shader_stages
+    }
+
+    fn specialize_from(
+        &self,
+        specialization: &Self::Specialization,
+        shader_stages: ShaderStages,
+        mut layout: PipelineLayout,
+    ) -> Self {
+        // create a vertex layout that provides all attributes from either the specialized vertex buffers or a zero buffer
+        let mut specialized_descriptor = self.clone();
+
+        // the vertex buffer descriptor of the mesh
+        let mesh_vertex_buffer_descriptor = &specialization.vertex_buffer_descriptor;
+
+        // the vertex buffer descriptor that will be used for this pipeline
+        let mut compiled_vertex_buffer_descriptor = VertexBufferDescriptor {
+            step_mode: InputStepMode::Vertex,
+            stride: mesh_vertex_buffer_descriptor.stride,
+            ..Default::default()
+        };
+
+        for shader_vertex_attribute in layout.vertex_buffer_descriptors.iter() {
+            let shader_vertex_attribute = shader_vertex_attribute
+                .attributes
+                .get(0)
+                .expect("Reflected layout has no attributes.");
+
+            if let Some(target_vertex_attribute) = mesh_vertex_buffer_descriptor
+                .attributes
+                .iter()
+                .find(|x| x.name == shader_vertex_attribute.name)
+            {
+                // copy shader location from reflected layout
+                let mut compiled_vertex_attribute = target_vertex_attribute.clone();
+                compiled_vertex_attribute.shader_location = shader_vertex_attribute.shader_location;
+                compiled_vertex_buffer_descriptor
+                    .attributes
+                    .push(compiled_vertex_attribute);
+            } else {
+                panic!(
+                    "Attribute {} is required by shader, but not supplied by mesh. Either remove the attribute from the shader or supply the attribute ({}) to the mesh.",
+                    shader_vertex_attribute.name,
+                    shader_vertex_attribute.name,
+                );
+            }
+        }
+
+        //TODO: add other buffers (like instancing) here
+        let mut vertex_buffer_descriptors = Vec::<VertexBufferDescriptor>::default();
+        vertex_buffer_descriptors.push(compiled_vertex_buffer_descriptor);
+
+        layout.vertex_buffer_descriptors = vertex_buffer_descriptors;
+        specialized_descriptor.sample_count = specialization.sample_count;
+        specialized_descriptor.primitive_topology = specialization.primitive_topology;
+        specialized_descriptor.index_format = specialization.index_format;
+        specialized_descriptor.layout = Some(layout);
+        specialized_descriptor.shader_stages = shader_stages;
+
+        specialized_descriptor
+    }
+
+    fn create_pipeline(
+        &self,
+        render_resource_context: &dyn RenderResourceContext,
+        handle: Handle<Self>,
+        shaders: &Assets<Shader>,
+    ) {
+        render_resource_context.create_render_pipeline(handle, &self, shaders)
+    }
+}
+
 /// Compute pipeline descriptor
 #[derive(Clone, Debug, TypeUuid)]
 #[uuid = "70c987c4-04cf-4ea1-bdaf-ab22d9329389"]
@@ -143,42 +328,34 @@ impl ComputePipelineDescriptor {
     pub fn get_layout_mut(&mut self) -> Option<&mut PipelineLayout> {
         self.layout.as_mut()
     }
+}
 
-    /* FIX: the old analog for PipelineDescriptor was moved to the RenderResourceContext
-        /// Reflects the pipeline layout from its shaders.
-        ///
-        /// If `dynamic_bindings` has values, shader uniforms will be set to "dynamic" if there is a matching binding in the list
-        pub fn reflect_layout(
-            &mut self,
-            shaders: &Assets<Shader>,
-            dynamic_bindings: &[DynamicBinding],
-        ) {
-            let compute_spirv = shaders.get(&self.shader_stages.compute).unwrap();
-            let mut layouts = vec![compute_spirv.reflect_layout(false).unwrap()];
-            let mut layout = PipelineLayout::from_shader_layouts(&mut layouts);
+impl Descriptor for ComputePipelineDescriptor {
+    type Specialization = ComputePipelineSpecialization;
 
-            if !dynamic_bindings.is_empty() {
-                // set binding uniforms to dynamic if render resource bindings use dynamic
-                for bind_group in layout.bind_groups.iter_mut() {
-                    for binding in bind_group.bindings.iter_mut() {
-                        let current = DynamicBinding {
-                            bind_group: bind_group.index,
-                            binding: binding.index,
-                        };
+    fn get_shader_stages<'a>(&'a self) -> &'a ShaderStages {
+        &self.shader_stages
+    }
 
-                        if dynamic_bindings.contains(&current) {
-                            if let BindType::Uniform {
-                                ref mut dynamic, ..
-                            } = binding.bind_type
-                            {
-                                *dynamic = true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            self.layout = Some(layout);
+    fn specialize_from(
+        &self,
+        _specialization: &Self::Specialization,
+        shader_stages: ShaderStages,
+        layout: PipelineLayout,
+    ) -> Self {
+        Self {
+            name: self.name.clone(),
+            shader_stages,
+            layout: Some(layout),
         }
-    */
+    }
+
+    fn create_pipeline(
+        &self,
+        render_resource_context: &dyn RenderResourceContext,
+        handle: Handle<Self>,
+        shaders: &Assets<Shader>,
+    ) {
+        render_resource_context.create_compute_pipeline(handle, &self, shaders)
+    }
 }
