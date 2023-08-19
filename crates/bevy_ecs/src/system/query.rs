@@ -2,8 +2,9 @@ use crate::{
     component::{Component, Tick},
     entity::Entity,
     query::{
-        BatchingStrategy, QueryCombinationIter, QueryEntityError, QueryIter, QueryManyIter,
-        QueryParIter, QuerySingleError, QueryState, ROQueryItem, ReadOnlyWorldQuery, WorldQuery,
+        BatchingStrategy, ErrorTypeInfo as ErrInfo, QueryCombinationIter, QueryEntityError,
+        QueryIter, QueryManyIter, QueryParIter, QuerySingleError, QueryState, ROQueryItem,
+        ReadOnlyWorldQuery, WorldQuery,
     },
     world::{unsafe_world_cell::UnsafeWorldCell, Mut},
 };
@@ -844,7 +845,10 @@ impl<'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery> Query<'w, 's, Q, F> {
     ///
     /// - [`get_mut`](Self::get_mut) to get a mutable query item.
     #[inline]
-    pub fn get(&self, entity: Entity) -> Result<ROQueryItem<'_, Q>, QueryEntityError> {
+    pub fn get(
+        &self,
+        entity: Entity,
+    ) -> Result<ROQueryItem<'_, Q>, QueryEntityError<ErrInfo<Q::ReadOnly, F>>> {
         // SAFETY: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
         unsafe {
@@ -872,7 +876,7 @@ impl<'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery> Query<'w, 's, Q, F> {
     pub fn get_many<const N: usize>(
         &self,
         entities: [Entity; N],
-    ) -> Result<[ROQueryItem<'_, Q>; N], QueryEntityError> {
+    ) -> Result<[ROQueryItem<'_, Q>; N], QueryEntityError<ErrInfo<Q::ReadOnly, F>>> {
         // SAFETY: it is the scheduler's responsibility to ensure that `Query` is never handed out on the wrong `World`.
         unsafe {
             self.state.get_many_read_only_manual(
@@ -958,7 +962,10 @@ impl<'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery> Query<'w, 's, Q, F> {
     ///
     /// - [`get`](Self::get) to get a read-only query item.
     #[inline]
-    pub fn get_mut(&mut self, entity: Entity) -> Result<Q::Item<'_>, QueryEntityError> {
+    pub fn get_mut(
+        &mut self,
+        entity: Entity,
+    ) -> Result<Q::Item<'_>, QueryEntityError<ErrInfo<Q, F>>> {
         // SAFETY: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
         unsafe {
@@ -982,7 +989,7 @@ impl<'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery> Query<'w, 's, Q, F> {
     pub fn get_many_mut<const N: usize>(
         &mut self,
         entities: [Entity; N],
-    ) -> Result<[Q::Item<'_>; N], QueryEntityError> {
+    ) -> Result<[Q::Item<'_>; N], QueryEntityError<ErrInfo<Q, F>>> {
         // SAFETY: scheduler ensures safe Query world access
         unsafe {
             self.state
@@ -1057,7 +1064,10 @@ impl<'w, 's, Q: WorldQuery, F: ReadOnlyWorldQuery> Query<'w, 's, Q, F> {
     ///
     /// - [`get_mut`](Self::get_mut) for the safe version.
     #[inline]
-    pub unsafe fn get_unchecked(&self, entity: Entity) -> Result<Q::Item<'_>, QueryEntityError> {
+    pub unsafe fn get_unchecked(
+        &self,
+        entity: Entity,
+    ) -> Result<Q::Item<'_>, QueryEntityError<ErrInfo<Q, F>>> {
         // SEMI-SAFETY: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
         self.state
@@ -1644,7 +1654,10 @@ impl<'w, 's, Q: ReadOnlyWorldQuery, F: ReadOnlyWorldQuery> Query<'w, 's, Q, F> {
     /// # bevy_ecs::system::assert_is_system(print_selected_character_name_system);
     /// ```
     #[inline]
-    pub fn get_inner(&self, entity: Entity) -> Result<ROQueryItem<'w, Q>, QueryEntityError> {
+    pub fn get_inner(
+        &self,
+        entity: Entity,
+    ) -> Result<ROQueryItem<'w, Q>, QueryEntityError<ErrInfo<Q, F>>> {
         // SAFETY: system runs without conflicts with other systems.
         // same-system queries have runtime borrow checks when they conflict
         unsafe {

@@ -8,13 +8,16 @@ use crate::{
         QueryIter, QueryParIter, WorldQuery,
     },
     storage::{TableId, TableRow},
+    system::Query,
     world::{unsafe_world_cell::UnsafeWorldCell, World, WorldId},
 };
 use bevy_tasks::ComputeTaskPool;
+use bevy_utils::get_short_name;
 #[cfg(feature = "trace")]
 use bevy_utils::tracing::Instrument;
 use fixedbitset::FixedBitSet;
-use std::{borrow::Borrow, fmt, mem::MaybeUninit};
+use std::{any, borrow::Borrow, fmt, marker::PhantomData, mem::MaybeUninit};
+use thiserror::Error;
 
 use super::{NopWorldQuery, QueryManyIter, ROQueryItem, ReadOnlyWorldQuery};
 
@@ -239,7 +242,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         &mut self,
         world: &'w World,
         entity: Entity,
-    ) -> Result<ROQueryItem<'w, Q>, QueryEntityError> {
+    ) -> Result<ROQueryItem<'w, Q>, QueryEntityError<ErrInfo<Q::ReadOnly, F>>> {
         self.update_archetypes(world);
         // SAFETY: query is read only
         unsafe {
@@ -295,7 +298,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         &mut self,
         world: &'w World,
         entities: [Entity; N],
-    ) -> Result<[ROQueryItem<'w, Q>; N], QueryEntityError> {
+    ) -> Result<[ROQueryItem<'w, Q>; N], QueryEntityError<ErrInfo<Q::ReadOnly, F>>> {
         self.update_archetypes(world);
 
         // SAFETY: update_archetypes validates the `World` matches
@@ -318,7 +321,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         &mut self,
         world: &'w mut World,
         entity: Entity,
-    ) -> Result<Q::Item<'w>, QueryEntityError> {
+    ) -> Result<Q::Item<'w>, QueryEntityError<ErrInfo<Q, F>>> {
         self.update_archetypes(world);
         let change_tick = world.change_tick();
         let last_change_tick = world.last_change_tick();
@@ -373,7 +376,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
     ///
     /// assert!(matches!(
     ///     query_state.get_many_mut(&mut world, [wrong_entity]).unwrap_err(),
-    ///     QueryEntityError::NoSuchEntity(QueryEntityErrorDetail {
+    ///     QueryEntityError { entity: wrong_entity, kind }::NoSuchEntity(QueryEntityErrorDetail {
     ///         requested_entity: wrong_entity,
     ///         ..
     ///     })
@@ -402,7 +405,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         &mut self,
         world: &'w mut World,
         entities: [Entity; N],
-    ) -> Result<[Q::Item<'w>; N], QueryEntityError> {
+    ) -> Result<[Q::Item<'w>; N], QueryEntityError<ErrInfo<Q, F>>> {
         self.update_archetypes(world);
 
         let change_tick = world.change_tick();
@@ -435,7 +438,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         &self,
         world: &'w World,
         entity: Entity,
-    ) -> Result<ROQueryItem<'w, Q>, QueryEntityError> {
+    ) -> Result<ROQueryItem<'w, Q>, QueryEntityError<ErrInfo<Q::ReadOnly, F>>> {
         self.validate_world(world.id());
         // SAFETY: query is read only and world is validated
         unsafe {
@@ -459,7 +462,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         &mut self,
         world: UnsafeWorldCell<'w>,
         entity: Entity,
-    ) -> Result<Q::Item<'w>, QueryEntityError> {
+    ) -> Result<Q::Item<'w>, QueryEntityError<ErrInfo<Q, F>>> {
         self.update_archetypes_unsafe_world_cell(world);
         self.get_unchecked_manual(world, entity, world.last_change_tick(), world.change_tick())
     }
@@ -480,14 +483,11 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         entity: Entity,
         last_run: Tick,
         this_run: Tick,
-    ) -> Result<Q::Item<'w>, QueryEntityError> {
+    ) -> Result<Q::Item<'w>, QueryEntityError<ErrInfo<Q, F>>> {
         let location = world
             .entities()
             .get(entity)
-            .ok_or(QueryEntityError::NoSuchEntity(QueryEntityErrorDetail {
-                requested_entity: entity,
-                query_type: std::any::type_name::<Self>(),
-            }))?;
+            .ok_or(QueryEntityError::new(entity, ErrorKind::NoSuchEntity))?;
         let archetype = world
             .archetypes()
             .get(location.archetype_id)
@@ -497,16 +497,13 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
             .matched_archetypes
             .contains(location.archetype_id.index())
         {
-            return Err(QueryEntityError::QueryDoesNotMatch(
-                QueryEntityMismatchDetail::ComponentMismatch(self.get_mismatches_detail(
+            return Err(QueryEntityError::new(
+                entity,
+                ErrorKind::Mismatch(self.get_mismatches_detail(
                     world.components(),
                     location,
                     archetype,
                 )),
-                QueryEntityErrorDetail {
-                    requested_entity: entity,
-                    query_type: std::any::type_name::<Self>(),
-                },
             ));
         }
 
@@ -524,13 +521,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         if F::filter_fetch(&mut filter, entity, location.table_row) {
             Ok(Q::fetch(&mut fetch, entity, location.table_row))
         } else {
-            Err(QueryEntityError::QueryDoesNotMatch(
-                QueryEntityMismatchDetail::ChangeDetectionMismatch,
-                QueryEntityErrorDetail {
-                    requested_entity: entity,
-                    query_type: std::any::type_name::<Self>(),
-                },
-            ))
+            Err(QueryEntityError::new(entity, ErrorKind::NoChange))
         }
     }
 
@@ -547,7 +538,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         entities: [Entity; N],
         last_run: Tick,
         this_run: Tick,
-    ) -> Result<[ROQueryItem<'w, Q>; N], QueryEntityError> {
+    ) -> Result<[ROQueryItem<'w, Q>; N], QueryEntityError<ErrInfo<Q::ReadOnly, F>>> {
         let mut values = [(); N].map(|_| MaybeUninit::uninit());
 
         for (value, entity) in std::iter::zip(&mut values, entities) {
@@ -582,17 +573,12 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         entities: [Entity; N],
         last_run: Tick,
         this_run: Tick,
-    ) -> Result<[Q::Item<'w>; N], QueryEntityError> {
+    ) -> Result<[Q::Item<'w>; N], QueryEntityError<ErrInfo<Q, F>>> {
         // Verify that all entities are unique
         for i in 0..N {
             for j in 0..i {
                 if entities[i] == entities[j] {
-                    return Err(QueryEntityError::AliasedMutability(
-                        QueryEntityErrorDetail {
-                            requested_entity: entities[i],
-                            query_type: std::any::type_name::<Self>(),
-                        },
-                    ));
+                    return Err(QueryEntityError::new(entities[i], ErrorKind::MultipleMut));
                 }
             }
         }
@@ -1346,7 +1332,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
         components: &Components,
         entity_location: EntityLocation,
         archetype: &Archetype,
-    ) -> Vec<QueryEntityComponentMismatch> {
+    ) -> Vec<ComponentMismatch> {
         let mut mismatch_details = Vec::new();
 
         for components_access in &self.component_access.filter_sets {
@@ -1377,7 +1363,7 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
                 })
                 .collect();
 
-            mismatch_details.push(QueryEntityComponentMismatch {
+            mismatch_details.push(ComponentMismatch {
                 query_with_components_not_in_entity,
                 query_without_components_in_entity,
                 entity_archetype: entity_location.archetype_id,
@@ -1391,37 +1377,62 @@ impl<Q: WorldQuery, F: ReadOnlyWorldQuery> QueryState<Q, F> {
 }
 
 /// An error that occurs when retrieving a specific [`Entity`]'s query result from [`Query`](crate::system::Query) or [`QueryState`].
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum QueryEntityError {
-    /// The given [`Entity`]'s components do not match the query, see [`QueryEntityMismatchDetail`].
-    QueryDoesNotMatch(QueryEntityMismatchDetail, QueryEntityErrorDetail),
+#[derive(Debug, PartialEq, Eq, Clone, Error)]
+#[error("Error querying for {entity:?} in query {error_type_info}: {kind}")]
+pub struct QueryEntityError<ET> {
+    /// Specific requested entity when encountering the error.
+    pub entity: Entity,
+    /// The query's type.
+    error_type_info: ET,
+    /// The kind of error preventing access to the entity.
+    pub kind: ErrorKind,
+}
+impl QueryEntityError<()> {
+    fn new<Q: WorldQuery, F: ReadOnlyWorldQuery>(
+        entity: Entity,
+        error_type: ErrorKind,
+    ) -> QueryEntityError<ErrorTypeInfo<Q, F>> {
+        QueryEntityError {
+            entity,
+            kind: error_type,
+            error_type_info: ErrorTypeInfo::new(),
+        }
+    }
+}
+type ErrInfo<Q, F> = ErrorTypeInfo<Q, F>;
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct ErrorTypeInfo<Q: WorldQuery, F: ReadOnlyWorldQuery>(PhantomData<fn(Q, F)>);
+impl<Q: WorldQuery, F: ReadOnlyWorldQuery> ErrorTypeInfo<Q, F> {
+    fn new() -> Self {
+        ErrorTypeInfo(PhantomData)
+    }
+}
+impl<Q: WorldQuery, F: ReadOnlyWorldQuery> fmt::Debug for ErrorTypeInfo<Q, F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let query_type_name = get_short_name(any::type_name::<Query<Q, F>>());
+        f.write_str(&query_type_name)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Error)]
+pub enum ErrorKind {
+    /// The entity is missing components required by the query,
+    /// or it has components that are filtered out by the query.
+    // TODO: actually display the component-level error info.
+    #[error("its components do not match the query.")]
+    Mismatch(Vec<ComponentMismatch>),
+    /// The entity has the correct component set, but didn't change/wasn't added since last time
+    /// the query ran.
+    #[error("its components are not in the change state required by the query.")]
+    NoChange,
     /// The given [`Entity`] does not exist.
-    NoSuchEntity(QueryEntityErrorDetail),
+    #[error("does not exist.")]
+    NoSuchEntity,
     /// The [`Entity`] was requested mutably more than once.
     ///
     /// See [`QueryState::get_many_mut`] for an example.
-    AliasedMutability(QueryEntityErrorDetail),
-}
-
-/// Additional information in the context of a [`QueryEntityError`].
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct QueryEntityErrorDetail {
-    /// Specific entity which was requested when encountering the error.
-    pub requested_entity: Entity,
-    /// Representation of the query's type.
-    pub query_type: &'static str,
-}
-
-/// Diagnosis about why an [`Entity`] and a [`Query`](crate::system::Query) or [`QueryState`] don't match.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum QueryEntityMismatchDetail {
-    /// The entity is missing components required by the query,
-    /// or it has components that are filtered out by the query.
-    ComponentMismatch(Vec<QueryEntityComponentMismatch>),
-    /// The entity has the correct components, but some of them are requested
-    /// with change detection ([`Added`](crate::query::Added) or [`Changed`](crate::query::Changed))
-    /// and the component for that entity is not in that change state.
-    ChangeDetectionMismatch,
+    #[error("was requested mutably more than once.")]
+    MultipleMut,
 }
 
 /// Represents which [`Entity`]'s component do not match a [`Query`](crate::system::Query) or [`QueryState`].
@@ -1434,7 +1445,7 @@ pub enum QueryEntityMismatchDetail {
 /// in that case a single `QueryEntityMismatchDetail` represents the reasons the entity
 /// doesn't match one of those "sub-queries".
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct QueryEntityComponentMismatch {
+pub struct ComponentMismatch {
     /// Components that the query requires but the entity doesn't have,
     /// with a representation of their name.
     pub query_with_components_not_in_entity: Vec<(String, ComponentId)>,
@@ -1449,46 +1460,12 @@ pub struct QueryEntityComponentMismatch {
     pub query_without_components: FixedBitSet,
 }
 
-impl std::error::Error for QueryEntityError {}
-
-impl fmt::Display for QueryEntityError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            QueryEntityError::QueryDoesNotMatch(
-                QueryEntityMismatchDetail::ComponentMismatch(_),
-                ..,
-            ) => write!(f, "The given entity's components do not match the query."),
-            QueryEntityError::QueryDoesNotMatch(
-                QueryEntityMismatchDetail::ChangeDetectionMismatch,
-                ..,
-            ) => write!(
-                f,
-                "The given entity's components are not in the change state required by the query."
-            ),
-            QueryEntityError::NoSuchEntity(QueryEntityErrorDetail {
-                requested_entity, ..
-            }) => write!(
-                f,
-                "The requested entity {} does not exist.",
-                requested_entity.index()
-            ),
-            QueryEntityError::AliasedMutability(QueryEntityErrorDetail {
-                requested_entity,
-                ..
-            }) => {
-                write!(
-                    f,
-                    "The entity {} was requested mutably more than once.",
-                    requested_entity.index()
-                )
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::{prelude::*, query::QueryEntityError, query::QueryEntityErrorDetail};
+    use crate::{
+        prelude::*,
+        query::{ErrorKind, ErrorTypeInfo, QueryEntityError, ReadOnlyWorldQuery, WorldQuery},
+    };
 
     #[test]
     fn get_many_unchecked_manual_uniqueness() {
@@ -1497,6 +1474,12 @@ mod tests {
         let entities: Vec<Entity> = (0..10).map(|_| world.spawn_empty().id()).collect();
 
         let query_state = world.query::<Entity>();
+        fn err<Q: WorldQuery, F: ReadOnlyWorldQuery>(
+            entity: Entity,
+            error_type: ErrorKind,
+        ) -> QueryEntityError<ErrorTypeInfo<Q, F>> {
+            QueryEntityError::new(entity, error_type)
+        }
 
         // These don't matter for the test
         let last_change_tick = world.last_change_tick();
@@ -1530,10 +1513,7 @@ mod tests {
                     )
                     .unwrap_err()
             },
-            QueryEntityError::AliasedMutability(QueryEntityErrorDetail {
-                requested_entity: entities[0],
-                query_type: "bevy_ecs::query::state::QueryState<bevy_ecs::entity::Entity>",
-            })
+            err(entities[0], ErrorKind::MultipleMut),
         );
 
         assert_eq!(
@@ -1548,10 +1528,7 @@ mod tests {
                     )
                     .unwrap_err()
             },
-            QueryEntityError::AliasedMutability(QueryEntityErrorDetail {
-                requested_entity: entities[0],
-                query_type: "bevy_ecs::query::state::QueryState<bevy_ecs::entity::Entity>",
-            })
+            err(entities[0], ErrorKind::MultipleMut),
         );
 
         assert_eq!(
@@ -1566,10 +1543,7 @@ mod tests {
                     )
                     .unwrap_err()
             },
-            QueryEntityError::AliasedMutability(QueryEntityErrorDetail {
-                requested_entity: entities[9],
-                query_type: "bevy_ecs::query::state::QueryState<bevy_ecs::entity::Entity>",
-            })
+            err(entities[9], ErrorKind::MultipleMut),
         );
     }
 
