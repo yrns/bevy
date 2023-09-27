@@ -36,6 +36,9 @@ pub use bevy_utils::tracing::{
     Level,
 };
 
+#[doc(hidden)]
+pub use tracing_subscriber::fmt::format::FmtSpan;
+
 use bevy_app::{App, Plugin};
 use tracing_log::LogTracer;
 #[cfg(feature = "tracing-chrome")]
@@ -97,6 +100,9 @@ pub struct LogPlugin {
     /// Filters out logs that are "less than" the given level.
     /// This can be further filtered using the `filter` setting.
     pub level: Level,
+
+    /// See [`with_span_events`](https://docs.rs/tracing-subscriber/*/tracing_subscriber/fmt/struct.SubscriberBuilder.html#method.with_span_events).
+    pub span_events: FmtSpan,
 }
 
 impl Default for LogPlugin {
@@ -104,6 +110,7 @@ impl Default for LogPlugin {
         Self {
             filter: "wgpu=error,naga=warn".to_string(),
             level: Level::INFO,
+            span_events: FmtSpan::NONE,
         }
     }
 }
@@ -159,7 +166,9 @@ impl Plugin for LogPlugin {
             #[cfg(feature = "tracing-tracy")]
             let tracy_layer = tracing_tracy::TracyLayer::new();
 
-            let fmt_layer = tracing_subscriber::fmt::Layer::default().with_writer(std::io::stderr);
+            let fmt_layer = tracing_subscriber::fmt::Layer::default()
+                .with_writer(std::io::stderr)
+                .with_span_events(self.span_events.clone());
 
             // bevy_render::renderer logs a `tracy.frame_mark` event every frame
             // at Level::INFO. Formatted logs should omit it.
