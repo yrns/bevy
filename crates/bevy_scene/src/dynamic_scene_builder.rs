@@ -9,6 +9,13 @@ use bevy_ecs::{
 use bevy_reflect::PartialReflect;
 use bevy_utils::default;
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
+
+#[allow(missing_docs)]
+pub struct Empty;
+
+#[allow(missing_docs)]
+pub struct Extracted;
 
 /// A [`DynamicScene`] builder, used to build a scene from a [`World`] by extracting some entities and resources.
 ///
@@ -54,26 +61,65 @@ use std::collections::BTreeMap;
 /// ```
 ///
 /// [`Reflect`]: bevy_reflect::Reflect
-pub struct DynamicSceneBuilder<'w> {
+pub struct DynamicSceneBuilder<'w, T = Empty> {
     extracted_resources: BTreeMap<ComponentId, Box<dyn PartialReflect>>,
     extracted_scene: BTreeMap<Entity, DynamicEntity>,
     component_filter: SceneFilter,
     resource_filter: SceneFilter,
     original_world: &'w World,
+    state: PhantomData<T>,
+}
+
+impl<'w, T> DynamicSceneBuilder<'w, T> {
+    fn extracted(self) -> DynamicSceneBuilder<'w, Extracted> {
+        let DynamicSceneBuilder {
+            extracted_resources,
+            extracted_scene,
+            component_filter,
+            resource_filter,
+            original_world,
+            ..
+        } = self;
+        DynamicSceneBuilder {
+            extracted_resources,
+            extracted_scene,
+            component_filter,
+            resource_filter,
+            original_world,
+            state: PhantomData,
+        }
+    }
 }
 
 impl<'w> DynamicSceneBuilder<'w> {
     /// Prepare a builder that will extract entities and their component from the given [`World`].
-    pub fn from_world(world: &'w World) -> Self {
-        Self {
+    pub fn from_world(world: &'w World) -> DynamicSceneBuilder<'w, Empty> {
+        DynamicSceneBuilder {
             extracted_resources: default(),
             extracted_scene: default(),
             component_filter: SceneFilter::default(),
             resource_filter: SceneFilter::default(),
             original_world: world,
+            state: PhantomData,
         }
     }
+}
 
+impl DynamicSceneBuilder<'_, Extracted> {
+    /// Consume the builder, producing a [`DynamicScene`].
+    ///
+    /// To make sure the dynamic scene doesn't contain entities without any components, call
+    /// [`Self::remove_empty_entities`] before building the scene.
+    #[must_use]
+    pub fn build(self) -> DynamicScene {
+        DynamicScene {
+            resources: self.extracted_resources.into_values().collect(),
+            entities: self.extracted_scene.into_values().collect(),
+        }
+    }
+}
+
+impl<'w, State> DynamicSceneBuilder<'w, State> {
     /// Specify a custom component [`SceneFilter`] to be used with this builder.
     #[must_use]
     pub fn with_filter(mut self, filter: SceneFilter) -> Self {
@@ -180,23 +226,11 @@ impl<'w> DynamicSceneBuilder<'w> {
         self
     }
 
-    /// Consume the builder, producing a [`DynamicScene`].
-    ///
-    /// To make sure the dynamic scene doesn't contain entities without any components, call
-    /// [`Self::remove_empty_entities`] before building the scene.
-    #[must_use]
-    pub fn build(self) -> DynamicScene {
-        DynamicScene {
-            resources: self.extracted_resources.into_values().collect(),
-            entities: self.extracted_scene.into_values().collect(),
-        }
-    }
-
     /// Extract one entity from the builder's [`World`].
     ///
     /// Re-extracting an entity that was already extracted will have no effect.
     #[must_use]
-    pub fn extract_entity(self, entity: Entity) -> Self {
+    pub fn extract_entity(self, entity: Entity) -> DynamicSceneBuilder<'w, Extracted> {
         self.extract_entities(std::iter::once(entity))
     }
 
@@ -245,7 +279,10 @@ impl<'w> DynamicSceneBuilder<'w> {
     /// [`allow`]: Self::allow
     /// [`deny`]: Self::deny
     #[must_use]
-    pub fn extract_entities(mut self, entities: impl Iterator<Item = Entity>) -> Self {
+    pub fn extract_entities(
+        mut self,
+        entities: impl Iterator<Item = Entity>,
+    ) -> DynamicSceneBuilder<'w, Extracted> {
         let type_registry = self.original_world.resource::<AppTypeRegistry>().read();
 
         for entity in entities {
@@ -286,7 +323,7 @@ impl<'w> DynamicSceneBuilder<'w> {
             self.extracted_scene.insert(entity, entry);
         }
 
-        self
+        self.extracted()
     }
 
     /// Extract resources from the builder's [`World`].
@@ -316,7 +353,7 @@ impl<'w> DynamicSceneBuilder<'w> {
     /// [`allow_resource`]: Self::allow_resource
     /// [`deny_resource`]: Self::deny_resource
     #[must_use]
-    pub fn extract_resources(mut self) -> Self {
+    pub fn extract_resources(mut self) -> DynamicSceneBuilder<'w, Extracted> {
         let type_registry = self.original_world.resource::<AppTypeRegistry>().read();
 
         for (component_id, _) in self.original_world.storages().resources.iter() {
@@ -346,7 +383,7 @@ impl<'w> DynamicSceneBuilder<'w> {
         }
 
         drop(type_registry);
-        self
+        self.extracted()
     }
 }
 
