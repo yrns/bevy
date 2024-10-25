@@ -41,7 +41,7 @@ derive_more = { version = "1", default-features = false, features = [
   "from",
   "display",
 ] }
-smol_str = "0.2"
+smol_str = "0.3"
 
 [lints]
 workspace = true
