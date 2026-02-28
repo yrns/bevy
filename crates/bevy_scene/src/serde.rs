@@ -5,8 +5,8 @@ use bevy_ecs::entity::Entity;
 use bevy_platform::collections::HashSet;
 use bevy_reflect::{
     serde::{
-        ReflectDeserializer, ReflectDeserializerProcessor, TypeRegistrationDeserializer,
-        TypedReflectDeserializer, TypedReflectSerializer,
+        ReflectDeserializer, ReflectDeserializerProcessor, ReflectSerializerProcessor,
+        TypeRegistrationDeserializer, TypedReflectDeserializer, TypedReflectSerializer,
     },
     PartialReflect, ReflectFromReflect, TypeRegistry,
 };
@@ -54,14 +54,16 @@ pub const ENTITY_FIELD_COMPONENTS: &str = "components";
 /// // Serialize through any serde-compatible Serializer
 /// let ron_string = ron::ser::to_string(&scene_serializer);
 /// ```
-pub struct SceneSerializer<'a> {
+pub struct SceneSerializer<'a, P> {
     /// The scene to serialize.
     pub scene: &'a DynamicScene,
     /// The type registry containing the types present in the scene.
     pub registry: &'a TypeRegistry,
+    /// Optional processor ([`ReflectSerializerProcessor`]).
+    pub processor: P,
 }
 
-impl<'a> SceneSerializer<'a> {
+impl<'a> SceneSerializer<'a, ()> {
     /// Create a new serializer from a [`DynamicScene`] and an associated [`TypeRegistry`].
     ///
     /// The type registry must contain all types present in the scene. This is generally the case
@@ -69,11 +71,18 @@ impl<'a> SceneSerializer<'a> {
     ///
     /// [`World`]: bevy_ecs::world::World
     pub fn new(scene: &'a DynamicScene, registry: &'a TypeRegistry) -> Self {
-        SceneSerializer { scene, registry }
+        SceneSerializer {
+            scene,
+            registry,
+            processor: (),
+        }
     }
 }
 
-impl<'a> Serialize for SceneSerializer<'a> {
+impl<'a, P> Serialize for SceneSerializer<'a, P>
+where
+    P: ReflectSerializerProcessor,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -84,6 +93,7 @@ impl<'a> Serialize for SceneSerializer<'a> {
             &SceneMapSerializer {
                 entries: &self.scene.resources,
                 registry: self.registry,
+                processor: &self.processor,
             },
         )?;
         state.serialize_field(
@@ -91,6 +101,7 @@ impl<'a> Serialize for SceneSerializer<'a> {
             &EntitiesSerializer {
                 entities: &self.scene.entities,
                 registry: self.registry,
+                processor: &self.processor,
             },
         )?;
         state.end()
@@ -98,14 +109,19 @@ impl<'a> Serialize for SceneSerializer<'a> {
 }
 
 /// Handles serialization of multiple entities as a map of entity id to serialized entity.
-pub struct EntitiesSerializer<'a> {
+pub struct EntitiesSerializer<'a, P> {
     /// The entities to serialize.
     pub entities: &'a [DynamicEntity],
     /// Type registry in which the component types used by the entities are registered.
     pub registry: &'a TypeRegistry,
+    /// Optional processor ([`ReflectSerializerProcessor`]).
+    pub processor: &'a P,
 }
 
-impl<'a> Serialize for EntitiesSerializer<'a> {
+impl<'a, P> Serialize for EntitiesSerializer<'a, P>
+where
+    P: ReflectSerializerProcessor,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -117,6 +133,7 @@ impl<'a> Serialize for EntitiesSerializer<'a> {
                 &EntitySerializer {
                     entity,
                     registry: self.registry,
+                    processor: self.processor,
                 },
             )?;
         }
@@ -125,14 +142,19 @@ impl<'a> Serialize for EntitiesSerializer<'a> {
 }
 
 /// Handles entity serialization as a map of component type to component value.
-pub struct EntitySerializer<'a> {
+pub struct EntitySerializer<'a, P> {
     /// The entity to serialize.
     pub entity: &'a DynamicEntity,
     /// Type registry in which the component types used by the entity are registered.
     pub registry: &'a TypeRegistry,
+    /// Optional processor ([`ReflectSerializerProcessor`]).
+    pub processor: &'a P,
 }
 
-impl<'a> Serialize for EntitySerializer<'a> {
+impl<'a, P> Serialize for EntitySerializer<'a, P>
+where
+    P: ReflectSerializerProcessor,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -143,6 +165,7 @@ impl<'a> Serialize for EntitySerializer<'a> {
             &SceneMapSerializer {
                 entries: &self.entity.components,
                 registry: self.registry,
+                processor: self.processor,
             },
         )?;
         state.end()
@@ -156,14 +179,19 @@ impl<'a> Serialize for EntitySerializer<'a> {
 /// deserializing through [`SceneMapDeserializer`].
 ///
 /// Note: The entries are sorted by type path before they're serialized.
-pub struct SceneMapSerializer<'a> {
+pub struct SceneMapSerializer<'a, P> {
     /// List of boxed values of unique type to serialize.
     pub entries: &'a [Box<dyn PartialReflect>],
     /// Type registry in which the types used in `entries` are registered.
     pub registry: &'a TypeRegistry,
+    /// Optional processor ([`ReflectSerializerProcessor`]).
+    pub processor: &'a P,
 }
 
-impl<'a> Serialize for SceneMapSerializer<'a> {
+impl<'a, P> Serialize for SceneMapSerializer<'a, P>
+where
+    P: ReflectSerializerProcessor,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -187,7 +215,11 @@ impl<'a> Serialize for SceneMapSerializer<'a> {
         for (type_path, partial_reflect) in sorted_entries {
             state.serialize_entry(
                 type_path,
-                &TypedReflectSerializer::new(partial_reflect, self.registry),
+                &TypedReflectSerializer::with_processor(
+                    partial_reflect,
+                    self.registry,
+                    self.processor,
+                ),
             )?;
         }
         state.end()
