@@ -5,8 +5,8 @@ use bevy_ecs::entity::Entity;
 use bevy_platform::collections::HashSet;
 use bevy_reflect::{
     serde::{
-        ReflectDeserializer, TypeRegistrationDeserializer, TypedReflectDeserializer,
-        TypedReflectSerializer,
+        ReflectDeserializer, ReflectDeserializerProcessor, TypeRegistrationDeserializer,
+        TypedReflectDeserializer, TypedReflectSerializer,
     },
     PartialReflect, ReflectFromReflect, TypeRegistry,
 };
@@ -208,12 +208,17 @@ enum EntityField {
 }
 
 /// Handles scene deserialization.
-pub struct SceneDeserializer<'a> {
+pub struct SceneDeserializer<'a, P = ()> {
     /// Type registry in which the components and resources types used in the scene to deserialize are registered.
     pub type_registry: &'a TypeRegistry,
+    /// Optional processor ([`ReflectDeserializerProcessor`]).
+    pub processor: P,
 }
 
-impl<'a, 'de> DeserializeSeed<'de> for SceneDeserializer<'a> {
+impl<'a, 'de, P> DeserializeSeed<'de> for SceneDeserializer<'a, P>
+where
+    P: ReflectDeserializerProcessor + Clone,
+{
     type Value = DynamicScene;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -225,16 +230,21 @@ impl<'a, 'de> DeserializeSeed<'de> for SceneDeserializer<'a> {
             &[SCENE_RESOURCES, SCENE_ENTITIES],
             SceneVisitor {
                 type_registry: self.type_registry,
+                processor: self.processor,
             },
         )
     }
 }
 
-struct SceneVisitor<'a> {
+struct SceneVisitor<'a, P> {
     pub type_registry: &'a TypeRegistry,
+    processor: P,
 }
 
-impl<'a, 'de> Visitor<'de> for SceneVisitor<'a> {
+impl<'a, 'de, P> Visitor<'de> for SceneVisitor<'a, P>
+where
+    P: ReflectDeserializerProcessor + Clone,
+{
     type Value = DynamicScene;
 
     fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
@@ -248,12 +258,14 @@ impl<'a, 'de> Visitor<'de> for SceneVisitor<'a> {
         let resources = seq
             .next_element_seed(SceneMapDeserializer {
                 registry: self.type_registry,
+                processor: self.processor.clone(),
             })?
             .ok_or_else(|| Error::missing_field(SCENE_RESOURCES))?;
 
         let entities = seq
             .next_element_seed(SceneEntitiesDeserializer {
                 type_registry: self.type_registry,
+                processor: self.processor.clone(),
             })?
             .ok_or_else(|| Error::missing_field(SCENE_ENTITIES))?;
 
@@ -277,6 +289,7 @@ impl<'a, 'de> Visitor<'de> for SceneVisitor<'a> {
                     }
                     resources = Some(map.next_value_seed(SceneMapDeserializer {
                         registry: self.type_registry,
+                        processor: self.processor.clone(),
                     })?);
                 }
                 SceneField::Entities => {
@@ -285,6 +298,7 @@ impl<'a, 'de> Visitor<'de> for SceneVisitor<'a> {
                     }
                     entities = Some(map.next_value_seed(SceneEntitiesDeserializer {
                         type_registry: self.type_registry,
+                        processor: self.processor.clone(),
                     })?);
                 }
             }
@@ -301,12 +315,16 @@ impl<'a, 'de> Visitor<'de> for SceneVisitor<'a> {
 }
 
 /// Handles deserialization for a collection of entities.
-pub struct SceneEntitiesDeserializer<'a> {
+pub struct SceneEntitiesDeserializer<'a, P> {
     /// Type registry in which the component types used by the entities to deserialize are registered.
     pub type_registry: &'a TypeRegistry,
+    processor: P,
 }
 
-impl<'a, 'de> DeserializeSeed<'de> for SceneEntitiesDeserializer<'a> {
+impl<'a, 'de, P> DeserializeSeed<'de> for SceneEntitiesDeserializer<'a, P>
+where
+    P: ReflectDeserializerProcessor + Clone,
+{
     type Value = Vec<DynamicEntity>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -315,15 +333,20 @@ impl<'a, 'de> DeserializeSeed<'de> for SceneEntitiesDeserializer<'a> {
     {
         deserializer.deserialize_map(SceneEntitiesVisitor {
             type_registry: self.type_registry,
+            processor: self.processor,
         })
     }
 }
 
-struct SceneEntitiesVisitor<'a> {
+struct SceneEntitiesVisitor<'a, P> {
     pub type_registry: &'a TypeRegistry,
+    pub processor: P,
 }
 
-impl<'a, 'de> Visitor<'de> for SceneEntitiesVisitor<'a> {
+impl<'a, 'de, P> Visitor<'de> for SceneEntitiesVisitor<'a, P>
+where
+    P: ReflectDeserializerProcessor + Clone,
+{
     type Value = Vec<DynamicEntity>;
 
     fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
@@ -339,6 +362,7 @@ impl<'a, 'de> Visitor<'de> for SceneEntitiesVisitor<'a> {
             let entity = map.next_value_seed(SceneEntityDeserializer {
                 entity,
                 type_registry: self.type_registry,
+                processor: self.processor.clone(),
             })?;
             entities.push(entity);
         }
@@ -348,14 +372,18 @@ impl<'a, 'de> Visitor<'de> for SceneEntitiesVisitor<'a> {
 }
 
 /// Handle deserialization of an entity and its components.
-pub struct SceneEntityDeserializer<'a> {
+pub struct SceneEntityDeserializer<'a, P> {
     /// Id of the deserialized entity.
     pub entity: Entity,
     /// Type registry in which the component types used by the entity to deserialize are registered.
     pub type_registry: &'a TypeRegistry,
+    processor: P,
 }
 
-impl<'a, 'de> DeserializeSeed<'de> for SceneEntityDeserializer<'a> {
+impl<'a, 'de, P> DeserializeSeed<'de> for SceneEntityDeserializer<'a, P>
+where
+    P: ReflectDeserializerProcessor + Clone,
+{
     type Value = DynamicEntity;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -368,17 +396,22 @@ impl<'a, 'de> DeserializeSeed<'de> for SceneEntityDeserializer<'a> {
             SceneEntityVisitor {
                 entity: self.entity,
                 registry: self.type_registry,
+                processor: self.processor,
             },
         )
     }
 }
 
-struct SceneEntityVisitor<'a> {
+struct SceneEntityVisitor<'a, P> {
     pub entity: Entity,
     pub registry: &'a TypeRegistry,
+    pub processor: P,
 }
 
-impl<'a, 'de> Visitor<'de> for SceneEntityVisitor<'a> {
+impl<'a, 'de, P> Visitor<'de> for SceneEntityVisitor<'a, P>
+where
+    P: ReflectDeserializerProcessor + Clone,
+{
     type Value = DynamicEntity;
 
     fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
@@ -392,6 +425,7 @@ impl<'a, 'de> Visitor<'de> for SceneEntityVisitor<'a> {
         let components = seq
             .next_element_seed(SceneMapDeserializer {
                 registry: self.registry,
+                processor: self.processor,
             })?
             .ok_or_else(|| Error::missing_field(ENTITY_FIELD_COMPONENTS))?;
 
@@ -415,6 +449,7 @@ impl<'a, 'de> Visitor<'de> for SceneEntityVisitor<'a> {
 
                     components = Some(map.next_value_seed(SceneMapDeserializer {
                         registry: self.registry,
+                        processor: self.processor.clone(),
                     })?);
                 }
             }
@@ -431,12 +466,16 @@ impl<'a, 'de> Visitor<'de> for SceneEntityVisitor<'a> {
 }
 
 /// Handles deserialization of a sequence of values with unique types.
-pub struct SceneMapDeserializer<'a> {
+pub struct SceneMapDeserializer<'a, P> {
     /// Type registry in which the types of the values to deserialize are registered.
     pub registry: &'a TypeRegistry,
+    processor: P,
 }
 
-impl<'a, 'de> DeserializeSeed<'de> for SceneMapDeserializer<'a> {
+impl<'a, 'de, P> DeserializeSeed<'de> for SceneMapDeserializer<'a, P>
+where
+    P: ReflectDeserializerProcessor,
+{
     type Value = Vec<Box<dyn PartialReflect>>;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -445,34 +484,43 @@ impl<'a, 'de> DeserializeSeed<'de> for SceneMapDeserializer<'a> {
     {
         deserializer.deserialize_map(SceneMapVisitor {
             registry: self.registry,
+            processor: self.processor,
         })
     }
 }
 
-struct SceneMapVisitor<'a> {
+struct SceneMapVisitor<'a, P> {
     pub registry: &'a TypeRegistry,
+    pub processor: P,
 }
 
-impl<'a, 'de> Visitor<'de> for SceneMapVisitor<'a> {
+impl<'a, 'de, P> Visitor<'de> for SceneMapVisitor<'a, P>
+where
+    P: ReflectDeserializerProcessor,
+{
     type Value = Vec<Box<dyn PartialReflect>>;
 
     fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
         formatter.write_str("map of reflect types")
     }
 
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    fn visit_seq<A>(mut self, mut seq: A) -> Result<Self::Value, A::Error>
     where
         A: SeqAccess<'de>,
     {
         let mut dynamic_properties = Vec::new();
-        while let Some(entity) = seq.next_element_seed(ReflectDeserializer::new(self.registry))? {
+
+        while let Some(entity) = seq.next_element_seed(ReflectDeserializer::with_processor(
+            self.registry,
+            &mut self.processor,
+        ))? {
             dynamic_properties.push(entity);
         }
 
         Ok(dynamic_properties)
     }
 
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    fn visit_map<A>(mut self, mut map: A) -> Result<Self::Value, A::Error>
     where
         A: MapAccess<'de>,
     {
@@ -488,8 +536,11 @@ impl<'a, 'de> Visitor<'de> for SceneMapVisitor<'a> {
                 )));
             }
 
-            let value =
-                map.next_value_seed(TypedReflectDeserializer::new(registration, self.registry))?;
+            let value = map.next_value_seed(TypedReflectDeserializer::with_processor(
+                registration,
+                self.registry,
+                &mut self.processor,
+            ))?;
 
             // Attempt to convert using FromReflect.
             let value = self
@@ -698,6 +749,7 @@ mod tests {
         let mut deserializer = ron::de::Deserializer::from_str(input).unwrap();
         let scene_deserializer = SceneDeserializer {
             type_registry: &world.resource::<AppTypeRegistry>().read(),
+            processor: (),
         };
         let scene = scene_deserializer.deserialize(&mut deserializer).unwrap();
 
@@ -733,6 +785,7 @@ mod tests {
         let mut deserializer = ron::de::Deserializer::from_str(&serialized).unwrap();
         let scene_deserializer = SceneDeserializer {
             type_registry: &registry,
+            processor: (),
         };
         let deserialized_scene = scene_deserializer.deserialize(&mut deserializer).unwrap();
         (scene, deserialized_scene)
@@ -825,6 +878,7 @@ mod tests {
 
         let scene_deserializer = SceneDeserializer {
             type_registry: registry,
+            processor: (),
         };
         let deserialized_scene = scene_deserializer
             .deserialize(&mut postcard::Deserializer::from_bytes(&serialized_scene))
@@ -867,6 +921,7 @@ mod tests {
 
         let scene_deserializer = SceneDeserializer {
             type_registry: registry,
+            processor: (),
         };
         let mut reader = BufReader::new(buf.as_slice());
 

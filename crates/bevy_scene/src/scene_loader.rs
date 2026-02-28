@@ -63,6 +63,7 @@ impl AssetLoader for SceneLoader {
         let mut deserializer = ron::de::Deserializer::from_bytes(&bytes)?;
         let scene_deserializer = SceneDeserializer {
             type_registry: &self.type_registry.read(),
+            processor: (),
         };
         Ok(scene_deserializer
             .deserialize(&mut deserializer)
