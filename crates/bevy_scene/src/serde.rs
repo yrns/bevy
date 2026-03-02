@@ -603,7 +603,10 @@ mod tests {
         reflect::AppTypeRegistry,
         world::FromWorld,
     };
-    use bevy_reflect::{Reflect, ReflectDeserialize, ReflectSerialize};
+    use bevy_reflect::{
+        serde::{ReflectDeserializerProcessor, ReflectSerializerProcessor},
+        Reflect, ReflectDeserialize, ReflectSerialize,
+    };
     use ron;
     use serde::{de::DeserializeSeed, Deserialize, Serialize};
     use std::io::BufReader;
@@ -810,14 +813,22 @@ mod tests {
         assert_eq!(1, dst_world.query::<&Baz>().iter(&dst_world).count());
     }
 
-    fn roundtrip_ron(world: &World) -> (DynamicScene, DynamicScene) {
+    fn roundtrip_ron<P>(world: &World, processor: P) -> (DynamicScene, DynamicScene)
+    where
+        P: ReflectSerializerProcessor + ReflectDeserializerProcessor + Clone,
+    {
         let scene = DynamicScene::from_world(world);
         let registry = world.resource::<AppTypeRegistry>().read();
-        let serialized = scene.serialize(&registry).unwrap();
+        let serialized = crate::dynamic_scene::serialize_ron(SceneSerializer {
+            scene: &scene,
+            registry: &registry,
+            processor: processor.clone(),
+        })
+        .unwrap();
         let mut deserializer = ron::de::Deserializer::from_str(&serialized).unwrap();
         let scene_deserializer = SceneDeserializer {
             type_registry: &registry,
-            processor: (),
+            processor,
         };
         let deserialized_scene = scene_deserializer.deserialize(&mut deserializer).unwrap();
         (scene, deserialized_scene)
@@ -834,7 +845,7 @@ mod tests {
         world.despawn(a);
         world.spawn(MyEntityRef(foo)).insert(Bar(123));
 
-        let (scene, deserialized_scene) = roundtrip_ron(&world);
+        let (scene, deserialized_scene) = roundtrip_ron(&world, ());
 
         let mut map = EntityHashMap::default();
         let mut dst_world = create_world();
@@ -868,7 +879,7 @@ mod tests {
         let qux = Qux(42);
         world.spawn(qux);
 
-        let (scene, deserialized_scene) = roundtrip_ron(&world);
+        let (scene, deserialized_scene) = roundtrip_ron(&world, ());
 
         assert_eq!(1, deserialized_scene.entities.len());
         assert_scene_eq(&scene, &deserialized_scene);
@@ -878,6 +889,66 @@ mod tests {
             .write_to_world(&mut world, &mut EntityHashMap::default())
             .unwrap();
         assert_eq!(&qux, world.query::<&Qux>().single(&world).unwrap());
+    }
+
+    #[test]
+    fn should_roundtrip_with_processor() {
+        use bevy_reflect::*;
+
+        #[derive(Clone)]
+        struct Processor;
+
+        impl ReflectDeserializerProcessor for Processor {
+            fn try_deserialize<'de, D>(
+                &mut self,
+                registration: &TypeRegistration,
+                _registry: &TypeRegistry,
+                deserializer: D,
+            ) -> Result<Result<Box<dyn PartialReflect>, D>, D::Error>
+            where
+                D: ::serde::Deserializer<'de>,
+            {
+                // Deserialize MyEnum::Tuple from String.
+                if registration.type_id() == std::any::TypeId::of::<MyEnum>() {
+                    Ok(Ok(Box::new(MyEnum::Tuple(String::deserialize(
+                        deserializer,
+                    )?))))
+                } else {
+                    Ok(Err(deserializer))
+                }
+            }
+        }
+
+        impl ReflectSerializerProcessor for Processor {
+            fn try_serialize<S>(
+                &self,
+                value: &dyn PartialReflect,
+                _registry: &TypeRegistry,
+                serializer: S,
+            ) -> Result<Result<S::Ok, S>, S::Error>
+            where
+                S: ::serde::Serializer,
+            {
+                // Serialize MyEnum::Tuple as a str.
+                if let Some(s) = value.try_downcast_ref::<MyEnum>().and_then(|v| match v {
+                    MyEnum::Tuple(s) => Some(s),
+                    _ => None, // this will fail to deserialize
+                }) {
+                    Ok(Ok(serializer.serialize_str(s)?))
+                } else {
+                    Ok(Err(serializer))
+                }
+            }
+        }
+
+        let mut world = create_world();
+        world.spawn(MyComponent {
+            baz: MyEnum::Tuple("Hello, World".to_owned()),
+            ..Default::default()
+        });
+
+        let (scene, deserialized_scene) = roundtrip_ron(&world, Processor);
+        assert_scene_eq(&scene, &deserialized_scene);
     }
 
     #[test]
