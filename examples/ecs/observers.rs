@@ -213,7 +213,7 @@ struct SpatialIndex {
     map: HashMap<(i32, i32), EntityHashSet>,
 }
 
-/// Cell size has to be bigger than any `TriggerMine::radius`
+/// Cell size has to be bigger than any `ExplodeMines::radius`
 const CELL_SIZE: f32 = 64.0;
 
 impl SpatialIndex {
